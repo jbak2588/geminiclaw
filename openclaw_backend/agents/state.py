@@ -1,4 +1,4 @@
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Sequence, TypedDict, Dict, List
 import operator
 from langchain_core.messages import BaseMessage
 
@@ -7,7 +7,11 @@ class AgentState(TypedDict):
     The state of the entire agentic team workflow.
     """
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    current_task: str
-    reviewer_feedback: str
-    status: str  # "in_progress", "needs_review", "approved", "rejected", "awaiting_approval", "error"
-    pending_command: str  # Stores command awaiting HITL approval
+    current_task: str           # The original CTO instruction
+    status: str                 # Current workflow status
+    reviewer_feedback: str      # Feedback from the reviewer (if rejected)
+    pending_command: str        # Command awaiting CTO approval (HITL)
+    team_config: List[Dict]     # List of agent configs from frontend
+    sub_tasks: Dict[str, str]   # PM-assigned tasks: {"agent_name": "task"}
+    agent_order: List[str]      # Ordered list of agents to execute sequentially
+    current_agent_index: int    # Index into agent_order for sequential execution

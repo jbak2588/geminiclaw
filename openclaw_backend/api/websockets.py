@@ -3,7 +3,8 @@ import os
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict
-from agents.graph import team_graph
+from agents.graph import create_dynamic_graph
+from agents.company_setup import generate_org_chart, COMPANY_PROFILES
 from tools.shell_tools import force_execute_command
 
 router = APIRouter()
@@ -93,12 +94,53 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 continue
             
             # ─────────────────────────────────────────────
+            # Org Chart: Generate AI org chart for company
+            # ─────────────────────────────────────────────
+            if msg_type == "org_chart_request":
+                profile_id = payload.get("profile_id", "pt_humantric")
+                whitepaper_dir = payload.get("whitepaper_dir", "")
+                
+                profile = COMPANY_PROFILES.get(profile_id, {})
+                if not profile:
+                    profile = {
+                        "name": payload.get("company_name", "Company"),
+                        "type": payload.get("company_type", ""),
+                        "kbli": payload.get("kbli", ""),
+                        "country": payload.get("country", ""),
+                        "product": payload.get("product", ""),
+                        "current_team_size": payload.get("team_size", 1),
+                        "stage": payload.get("stage", ""),
+                    }
+                
+                await manager.send_personal_message(json.dumps({
+                    "type": "info",
+                    "message": "AI가 조직도를 생성하고 있습니다..."
+                }), client_id)
+                
+                org_chart = await generate_org_chart(profile, whitepaper_dir)
+                
+                await manager.send_personal_message(json.dumps({
+                    "type": "org_chart_response",
+                    "data": org_chart
+                }), client_id)
+                continue
+            
+            # ─────────────────────────────────────────────
             # Normal task flow
             # ─────────────────────────────────────────────
             task_instruction = payload.get("task", "")
             if not task_instruction:
                 await manager.send_personal_message(json.dumps({"error": "No task provided."}), client_id)
                 continue
+            
+            # Get team configuration from frontend (default: developer only)
+            team_config = payload.get("team", [{"name": "developer"}])
+            
+            # Inject knowledge directory for all agents
+            knowledge_dir = r"E:\geminiclaw\doc"
+            for member in team_config:
+                if "knowledge_dir" not in member or not member["knowledge_dir"]:
+                    member["knowledge_dir"] = knowledge_dir
             
             # Create a log file for this session
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -107,7 +149,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             _write_log(log_file, f"=== Session Log ===")
             _write_log(log_file, f"Time: {datetime.now().isoformat()}")
             _write_log(log_file, f"Task: {task_instruction}")
+            team_names = [m.get("name", "?") for m in team_config]
+            _write_log(log_file, f"Team: {', '.join(team_names)}")
             _write_log(log_file, f"{'='*50}\n")
+            
+            # Build dynamic graph from team config
+            dynamic_graph = create_dynamic_graph(team_config)
             
             # Initialize state
             initial_state = {
@@ -115,17 +162,21 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 "current_task": task_instruction,
                 "reviewer_feedback": "",
                 "status": "in_progress",
-                "pending_command": ""
+                "pending_command": "",
+                "team_config": team_config,
+                "sub_tasks": {},
+                "agent_order": [],
+                "current_agent_index": 0,
             }
             
             # Start streaming
             await manager.send_personal_message(json.dumps({
                 "type": "info",
-                "message": "Agentic Team started working..."
+                "message": f"Agentic Team started working... (Team: {', '.join(team_names)})"
             }), client_id)
             _write_log(log_file, "[INFO] Agentic Team started working...\n")
             
-            for event in team_graph.stream(initial_state):
+            for event in dynamic_graph.stream(initial_state):
                 for node_name, state_value in event.items():
                     msg_content = ""
                     if "messages" in state_value and state_value["messages"]:

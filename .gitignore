@@ -1,0 +1,40 @@
+# ===== Python (Backend) =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ===== Flutter (App) =====
+openclaw_app/.dart_tool/
+openclaw_app/.packages
+openclaw_app/build/
+openclaw_app/.flutter-plugins
+openclaw_app/.flutter-plugins-dependencies
+openclaw_app/.metadata
+openclaw_app/android/.gradle/
+openclaw_app/android/local.properties
+openclaw_app/ios/Pods/
+openclaw_app/ios/.symlinks/
+openclaw_app/ios/Flutter/Generated.xcconfig
+openclaw_app/ios/Flutter/flutter_export_environment.sh
+openclaw_app/web/favicon.png
+
+# ===== IDEs & Editors =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Misc =====
+*.log
+fix_env.py

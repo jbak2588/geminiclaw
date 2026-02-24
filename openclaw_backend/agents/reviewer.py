@@ -16,19 +16,21 @@ def reviewer_node(state: AgentState) -> Dict[str, Any]:
     else:
         last_worker_msg = "No work found."
     
-    prompt = f"""You are a strict QA/Reviewer Agent.
-The original task is: {current_task}
-The Worker Agent has submitted the following work:
-{last_worker_msg}
-
-Analyze the work. Does it fully complete the task?
-If it looks good, reply ONLY with 'APPROVED'.
-If it has issues, reply with a detailed feedback explaining what needs to be fixed. Do not start your reply with 'APPROVED'.
-"""
+    prompt = (
+        f"You are a QA/Reviewer Agent. Be LENIENT and BRIEF.\n"
+        f"Task: {current_task}\n"
+        f"Worker's submission:\n{last_worker_msg}\n\n"
+        f"If the work reasonably addresses the task, reply ONLY with 'APPROVED'.\n"
+        f"Only reject if there are critical errors. If rejecting, give ONE sentence of feedback.\n"
+    )
     try:
         if not settings.GEMINI_API_KEY:
              raise ValueError("GEMINI_API_KEY is missing or empty. Please check your .env file.")
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", api_key=settings.GEMINI_API_KEY)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            api_key=settings.GEMINI_API_KEY,
+            max_output_tokens=256,  # Reviewer needs very short responses
+        )
         response = llm.invoke([HumanMessage(content=prompt)])
         content = response.content.strip()
     except Exception as e:

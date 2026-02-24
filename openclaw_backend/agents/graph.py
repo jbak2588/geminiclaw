@@ -18,10 +18,13 @@ def create_team_graph():
     # Start -> Worker
     workflow.set_entry_point("worker")
     
-    # Worker -> Conditional Edge: if error, go to END; otherwise, go to reviewer
+    # Worker -> Conditional Edge: if error or awaiting_approval, go to END; otherwise, go to reviewer
     def check_worker_status(state: AgentState) -> str:
-        if state.get("status") == "error":
+        status = state.get("status", "")
+        if status == "error":
             return "error"
+        if status == "awaiting_approval":
+            return "awaiting_approval"
         return "continue"
     
     workflow.add_conditional_edges(
@@ -29,6 +32,7 @@ def create_team_graph():
         check_worker_status,
         {
             "error": END,
+            "awaiting_approval": END,
             "continue": "reviewer"
         }
     )

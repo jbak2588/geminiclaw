@@ -39,6 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Basic State Tracking
   bool _isConnecting = false;
+  bool _isWorkflowRunning = false;
   String _currentAgentNode = "Idle";
   String _workflowStatus = "Waiting for task...";
 
@@ -48,6 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _logs.clear();
       _isConnecting = true;
+      _isWorkflowRunning = true;
       _workflowStatus = "Starting workflow...";
       _currentAgentNode = "Initializing";
     });
@@ -70,18 +72,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           if (data["type"] == "info") {
             _logs.add("[INFO] ${data['message']}");
+            // Stop spinner when workflow completes
+            if (data['message']?.toString().contains('Completed') == true) {
+              _isWorkflowRunning = false;
+            }
+          } else if (data["type"] == "approval_request") {
+            // HITL: Dangerous command detected - show approval dialog
+            _currentAgentNode = data["node"] ?? "worker";
+            _workflowStatus = "awaiting_approval";
+            final command = data["command"] ?? "";
+            _logs.add(
+              "[${data['node']}] -> Status: awaiting_approval\n${data['message']}",
+            );
+            _showApprovalDialog(command, data["message"]?.toString() ?? "");
           } else if (data["type"] == "agent_event") {
             _currentAgentNode = data["node"] ?? "Unknown Node";
             _workflowStatus = data["status"] ?? "Processing";
             _logs.add(
               "[${data['node']}] -> Status: ${data['status']}\n${data['message']}",
             );
-
-            // Trigger approval dialog if dangerous operation detected
-            if (data["message"] != null &&
-                data["message"].toString().contains("APPROVAL_REQUIRED")) {
-              _showApprovalDialog(data["message"].toString());
-            }
           }
           _isConnecting = false;
         });
@@ -98,7 +107,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _logs.add("[SYSTEM] WebSocket closed.");
           _isConnecting = false;
           if (_workflowStatus != "approved") {
-            _workflowStatus = "Finished with ending state";
+            _workflowStatus = "Finished";
           }
         });
       },
@@ -188,10 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Icons.timeline,
                   ),
                   const Spacer(),
-                  if (_isConnecting ||
-                      _workflowStatus == "Processing" ||
-                      _workflowStatus == "needs_review" ||
-                      _workflowStatus == "rejected")
+                  if (_isWorkflowRunning)
                     const Center(child: CircularProgressIndicator()),
                   const Spacer(),
                 ],
@@ -242,42 +248,109 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _showApprovalDialog(String message) {
+  void _showApprovalDialog(String command, String reason) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text(
-          "Human-In-The-Loop Approval",
-          style: TextStyle(color: Colors.orangeAccent),
+        backgroundColor: Colors.grey.shade900,
+        title: const Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orangeAccent,
+              size: 28,
+            ),
+            SizedBox(width: 8),
+            Text(
+              "⚠️ CTO 승인 필요",
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
-        content: Text(
-          "A dangerous command has been detected:\n\n$message\n\nDo you want to authorize it?",
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "위험한 명령어가 감지되었습니다:",
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.maxFinite,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade900.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade700),
+              ),
+              child: Text(
+                "\$ $command",
+                style: const TextStyle(
+                  fontFamily: 'Courier',
+                  color: Colors.redAccent,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "이 명령어를 실행하시겠습니까?",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
+              // Send rejection to backend
               _channel?.sink.add(
                 jsonEncode({
-                  "task":
-                      "User REJECTED the command. Do not execute it and try another approach.",
+                  "type": "approval_response",
+                  "approved": false,
+                  "command": command,
                 }),
               );
+              setState(() {
+                _logs.add("[CTO] ❌ 명령어 거절됨: $command");
+                _workflowStatus = "rejected";
+              });
             },
-            child: const Text("Reject", style: TextStyle(color: Colors.red)),
+            child: const Text(
+              "❌ 거절",
+              style: TextStyle(color: Colors.red, fontSize: 16),
+            ),
           ),
+          const SizedBox(width: 8),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.orange.shade800,
+            ),
             onPressed: () {
               Navigator.of(ctx).pop();
+              // Send approval to backend
               _channel?.sink.add(
                 jsonEncode({
-                  "task":
-                      "User APPROVED the command. Note: You can't actually bypass the prompt yet in this PoC, but assume it succeeded for demo.",
+                  "type": "approval_response",
+                  "approved": true,
+                  "command": command,
                 }),
               );
+              setState(() {
+                _logs.add("[CTO] ✅ 명령어 승인됨: $command");
+                _workflowStatus = "approved";
+              });
             },
-            child: const Text("Approve"),
+            child: const Text("✅ 승인", style: TextStyle(fontSize: 16)),
           ),
         ],
       ),

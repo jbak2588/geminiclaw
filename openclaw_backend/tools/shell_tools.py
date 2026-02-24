@@ -37,3 +37,23 @@ def execute_shell_command(command: str) -> str:
         return f"Error: Command timed out."
     except Exception as e:
         return f"Error executing command: {str(e)}"
+
+
+def force_execute_command(command: str) -> str:
+    """Execute a CTO-approved command, bypassing safety checks (HITL approved)."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode == 0:
+            return result.stdout if result.stdout else "(Command executed successfully with no output)"
+        else:
+            return f"Command failed with code {result.returncode}:\n{result.stderr}"
+    except subprocess.TimeoutExpired:
+        return "Error: Command timed out."
+    except Exception as e:
+        return f"Error executing command: {str(e)}"

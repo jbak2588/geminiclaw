@@ -28,3 +28,7 @@
 
 - [x]  Set up basic permission rules (e.g., shell command regex blacklist).
 - [ ]  Incorporate Docker or similar san
+      
+      
+      
+[[GeminiClaw 프로젝트 진행 현황 리뷰]]

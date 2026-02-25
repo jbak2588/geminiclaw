@@ -1,0 +1,20 @@
+# Start from a lightweight Python image
+FROM python:3.10-slim
+
+# Install common development tools the agent might need
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    jq \
+    vim \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory (this is where the host workspace will be mounted)
+WORKDIR /workspace
+
+# Set default user permissions (optional, but good for security so it doesn't break host file perms)
+# We handle this loosely for now as it's a local dev tool
+
+# Default command keeps the container alive so we can exec into it
+CMD ["tail", "-f", "/dev/null"]

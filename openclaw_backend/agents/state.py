@@ -16,3 +16,4 @@ class AgentState(TypedDict):
     agent_order: List[str]      # Ordered list of agents to execute sequentially
     current_agent_index: int    # Index into agent_order for sequential execution
     kanban_tasks: List[Dict]    # Kanban board state: [{id, agent, task, status, emoji}]
+    project_id: str             # Project ID for dynamic skill manual resolution

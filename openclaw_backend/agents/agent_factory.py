@@ -19,9 +19,10 @@ TOOL_REGISTRY = {
 }
 
 
-def _load_knowledge(knowledge_dir: str) -> str:
-    """Load text files from a knowledge directory as context."""
-    if not knowledge_dir or not os.path.isdir(knowledge_dir):
+def _load_knowledge(project_id: str) -> str:
+    """Load matching text/md files from the project's knowledge directory."""
+    knowledge_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "knowledge", project_id)
+    if not project_id or not os.path.isdir(knowledge_dir):
         return ""
     
     context_parts = []
@@ -67,14 +68,28 @@ def create_agent_node(config: AgentConfig):
         current_task = sub_tasks.get(config.name, state.get("current_task", ""))
         reviewer_feedback = state.get("reviewer_feedback", "")
         
-        # Build system prompt: SKILL.md + AGENTS 공통규칙 + COMPANY_CONTEXT + knowledge
-        knowledge_context = _load_knowledge(config.knowledge_dir)
+        # 1. Load dynamic project knowledge
+        project_id = state.get("project_id", "default")
+        knowledge_context = _load_knowledge(project_id)
+        
+        # 2. Load dynamic skill manual if available
+        dynamic_skill_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "storage", "skills", project_id, f"{config.name}_manual.md"
+        )
         system_prompt = config.system_prompt
+        if os.path.exists(dynamic_skill_path):
+            try:
+                with open(dynamic_skill_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read().strip()
+            except Exception:
+                pass
+
         if AGENTS_CONTEXT:
-            system_prompt += "\n" + AGENTS_CONTEXT
-        system_prompt += "\n" + COMPANY_CONTEXT
+            system_prompt += "\n\n" + AGENTS_CONTEXT
+        system_prompt += "\n\n" + COMPANY_CONTEXT
         if knowledge_context:
-            system_prompt += f"\n{knowledge_context}\n"
+            system_prompt += f"\n\n{knowledge_context}\n"
         
         user_prompt = f"Task: {current_task}\n"
         if reviewer_feedback:

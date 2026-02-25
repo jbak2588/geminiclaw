@@ -4,10 +4,21 @@ Dynamic Graph Builder: Creates LangGraph workflow based on team configuration.
 Flow: PM → Agent1 → Reviewer → Agent2 → Reviewer → ... → END
 """
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.sqlite import SqliteSaver
+import sqlite3
+import os
+
 from agents.state import AgentState
 from agents.pm_agent import pm_node
 from agents.agent_config import AgentConfig, AVAILABLE_ROLES
 from agents.agent_factory import create_agent_node
+
+# Global memory checkpointer
+STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+os.makedirs(STORAGE_DIR, exist_ok=True)
+db_path = os.path.join(STORAGE_DIR, "team_state.db")
+conn = sqlite3.connect(db_path, check_same_thread=False)
+memory = SqliteSaver(conn)
 
 
 def create_dynamic_graph(team_config: list):
@@ -190,7 +201,7 @@ def create_dynamic_graph(team_config: list):
     # ─────────────────────────────────────────────
     # 6. Compile
     # ─────────────────────────────────────────────
-    return workflow.compile()
+    return workflow.compile(checkpointer=memory)
 
 
 # Default graph for backward compatibility (2-agent team)

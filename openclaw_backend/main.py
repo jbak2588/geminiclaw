@@ -3,8 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Import our websocket router
+# Import our websocket and rest routers
 from api.websockets import router as ws_router
+from api.rest import router as rest_router
+from api.knowledge import router as knowledge_router
+from api.logs import router as logs_router
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +29,12 @@ app.add_middleware(
 
 # Include the WebSocket routing
 app.include_router(ws_router)
+# Include REST endpoints
+app.include_router(rest_router, prefix="/api")
+# Include Knowledge endpoints
+app.include_router(knowledge_router, prefix="/api/projects")
+# Include Logs endpoints
+app.include_router(logs_router, prefix="/api/logs")
 
 @app.get("/")
 def read_root():

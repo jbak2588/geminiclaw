@@ -1,26 +1,34 @@
 # Agentic Team Platform (Gemini-powered CTO App)
 
+## Phase 0: Base Personal Assistant (The "Pi" Node)
+- [x] Implement standalone `Pi Agent` for direct 1:1 chat without PM routing.
+- [x] Add Local System Tools (e.g., macOS notifications, clipboard read/write).
+- [x] Implement Session & Memory Store (SQLite/JSON) for persistent conversations.
+
 ## Phase 1: Core Agent Engine & PoC (Backend)
 - [x] Initialize Python backend project structure.
-- [ ] Set up Google GenAI SDK and LangGraph/LangChain environment.
+- [x] Set up Google GenAI SDK and LangGraph/LangChain environment.
 - [x] Define core tools for Agents (e.g., file reader, simple shell executor).
 - [x] Implement `Worker Agent` (code editor) and `Reviewer Agent` (QA/Verifier).
 - [x] Build a simple LangGraph workflow: Worker -> Reviewer -> (Reject loop) / Approve.
-- [ ] Implement Human-in-the-loop (HITL) interrupt mechanism in LangGraph.
+- [x] Implement Human-in-the-loop (HITL) interrupt mechanism in LangGraph.
 
 ## Phase 2: Live Observability & API (Backend)
 - [x] Set up FastAPI for backend orchestration.
 - [x] Implement WebSockets or Server-Sent Events (SSE) for real-time Agent logs/thoughts.
-- [ ] Create API endpoints for Project/Task creation and Agent team configuration.
-- [ ] Establish a Shared Memory / Blackboard (State DB) for agent context.
+- [x] Create API endpoints for Project/Task creation and Agent team configuration.
+- [x] Establish a Shared Memory / Blackboard (State DB) for agent context.
 
 ## Phase 3: Dedicated UI/UX Dashboard (Frontend)
 - [x] Scaffold dedicated App front-end (Flutter or React).
-- [x] Build Task Creation & Team Configuration forms.
+- [x] Build Dual-mode UI: "Pi Assistant" (1:1 chat) and "Team Orchestrator".
+- [x] Integrate REST APIs for Project & Team Preset configuration.
 - [x] Implement Swimlane Kanban Board for visual task progress.
-- [x] Create the Live Obeservability Panel (Terminal view, Diff viewer, Thoughts stream).
+- [x] Create the Live Obeservability Panel (Terminal view, Thoughts stream).
 - [x] Integrate Human-in-the-loop approval dialogs in the UI.
 
 ## Phase 4: Security Rules & Sandbox Integration
 - [x] Set up basic permission rules (e.g., shell command regex blacklist).
-- [ ] Incorporate Docker or similar sandbox for Worker code execution (future scope).
+- [x] Create `Dockerfile.sandbox` for an isolated Python/Shell environment.
+- [x] Implement `DockerSandboxManager` in Python to spin up/down containers.
+- [x] Update `execute_shell_command` to route commands to Docker when executed by a `Worker` (non-Pi).

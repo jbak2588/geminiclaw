@@ -10,21 +10,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from core.config import settings
 
 
-# ──────────────────────────────────────────────
-# Pre-built company profiles
-# ──────────────────────────────────────────────
-COMPANY_PROFILES = {
-    "pt_humantric": {
-        "name": "PT Humantric Net Indonesia",
-        "type": "PMA (외국인 투자 법인)",
-        "kbli": "63122 (포털 웹 및 소셜 미디어 플랫폼 운영)",
-        "country": "Indonesia",
-        "product": "Mozzy - 하이퍼로컬 커뮤니티 슈퍼앱 (29개국, 11개 기능)",
-        "current_team_size": 1,
-        "stage": "Pre-launch (앱스토어 등록 준비 중)",
-        "whitepaper_dir": "",  # Will be set dynamically
-    },
-}
+# Storage path for dynamically generated skills
+STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+SKILLS_DIR = os.path.join(STORAGE_DIR, "skills")
+os.makedirs(SKILLS_DIR, exist_ok=True)
 
 
 def _load_whitepaper(whitepaper_dir: str, max_chars: int = 5000) -> str:
@@ -47,7 +36,8 @@ def _load_whitepaper(whitepaper_dir: str, max_chars: int = 5000) -> str:
 
 
 async def generate_org_chart(
-    company_profile: Dict[str, Any],
+    company_description: str,
+    project_id: str = "default",
     whitepaper_dir: str = "",
 ) -> Dict[str, Any]:
     """
@@ -74,43 +64,36 @@ async def generate_org_chart(
     # Load whitepaper context
     wp_context = _load_whitepaper(whitepaper_dir) if whitepaper_dir else ""
     
-    prompt = f"""You are an expert business consultant specializing in Indonesian company formation.
+    prompt = f"""You are an expert business consultant.
 
-Analyze this company and recommend an organizational structure:
+Analyze this company description and recommend an organizational structure:
 
-COMPANY INFO:
-- Name: {company_profile.get('name', 'Unknown')}
-- Type: {company_profile.get('type', 'Unknown')}
-- KBLI: {company_profile.get('kbli', 'Unknown')}
-- Country: {company_profile.get('country', 'Unknown')}
-- Product: {company_profile.get('product', 'Unknown')}
-- Current Team Size: {company_profile.get('current_team_size', 1)}
-- Stage: {company_profile.get('stage', 'Unknown')}
+COMPANY DESCRIPTION:
+{company_description}
 
 {"PRODUCT WHITEPAPER (excerpt):" + chr(10) + wp_context if wp_context else ""}
 
 RULES:
 1. Output ONLY a valid JSON object with the structure shown below.
-2. Recommend 5-8 departments appropriate for this company type, stage, and local regulations.
-3. For Indonesian PMA: include departments needed for LKPM reporting, PSE registration, tax compliance.
-4. Each department must have a unique "id" matching one of these agent types:
-   [admin, legal, accountant, developer, marketer, cs, hr, researcher, writer]
-5. Set "priority" as "essential", "important", or "optional" based on company stage.
-6. Set "default_enabled" to true for essential/important departments.
-7. Write department names in Korean, descriptions in Korean.
+2. Recommend 3-6 departments appropriate for this specific company.
+3. Each department must have a unique "id" matching one of these agent types:
+   [pm, admin, legal, accountant, developer, marketer, cs, hr, researcher, writer, designer]
+4. Set "priority" as "essential", "important", or "optional".
+5. Set "default_enabled" to true for essential/important departments.
+6. Write department names in Korean, descriptions in Korean.
 
 OUTPUT FORMAT:
 {{
-  "company_name": "{company_profile.get('name', 'Company')}",
+  "company_name": "Generated Company Name",
   "departments": [
     {{
-      "id": "legal",
-      "name": "법무/준법팀",
-      "name_en": "Legal & Compliance",
-      "emoji": "⚖️",
-      "description": "이용약관, 개인정보처리방침, PSE 등록, KOMINFO 규정 준수",
+      "id": "marketer",
+      "name": "마케팅팀",
+      "name_en": "Marketing",
+      "emoji": "📢",
+      "description": "SNS 채널 관리 및 콘텐츠 배포",
       "priority": "essential",
-      "agents": ["legal"],
+      "agents": ["marketer"],
       "default_enabled": true
     }}
   ]
@@ -138,22 +121,74 @@ OUTPUT FORMAT:
             json_str = json_str.strip()
         
         result = json.loads(json_str)
+        
+        # Trigger async skill generation in the background (or await it)
+        await generate_skill_manuals(company_description, result.get("departments", []), project_id)
+        
         return result
         
     except json.JSONDecodeError:
-        # Return fallback org chart
-        return _get_fallback_org_chart(company_profile)
+        return _get_fallback_org_chart()
     except Exception as e:
         return {
             "error": str(e),
-            **_get_fallback_org_chart(company_profile),
+            **_get_fallback_org_chart(),
         }
 
+async def generate_skill_manuals(company_description: str, departments: List[Dict], project_id: str):
+    """Generate Markdown skill manuals for each active department."""
+    if not settings.GEMINI_API_KEY:
+        return
+        
+    project_skill_dir = os.path.join(SKILLS_DIR, project_id)
+    os.makedirs(project_skill_dir, exist_ok=True)
+    
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-lite",
+        api_key=settings.GEMINI_API_KEY,
+        max_output_tokens=2048,
+    )
+    
+    for dept in departments:
+        role_id = dept.get("id")
+        if not role_id:
+            continue
+            
+        file_path = os.path.join(project_skill_dir, f"{role_id}_manual.md")
+        
+        # Skip if manual already exists
+        if os.path.exists(file_path):
+            continue
+            
+        prompt = f"""You are setting up the Standard Operating Procedure (SOP) for this company.
 
-def _get_fallback_org_chart(profile: Dict) -> Dict:
+COMPANY DESCRIPTION:
+{company_description}
+
+ROLE TO DEFINE: {dept.get('name')} ({role_id})
+ROLE DESCRIPTION: {dept.get('description')}
+
+Write a concise, professional Markdown manual that this AI agent must follow when executing tasks.
+Include:
+1. Role Definition & Core Objective
+2. Key Responsibilities
+3. Output Format & Guidelines (e.g., tone of voice, specific formats)
+4. Constraints or Rules
+
+Output strictly Markdown text. NO backticks enclosing the entire response. Start directly with `# {dept.get('name')} Operating Manual`
+"""
+        try:
+            response = llm.invoke([HumanMessage(content=prompt)])
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(response.content.strip())
+        except Exception:
+            pass
+
+
+def _get_fallback_org_chart() -> Dict:
     """Fallback org chart when AI fails."""
     return {
-        "company_name": profile.get("name", "Company"),
+        "company_name": "My Company",
         "departments": [
             {
                 "id": "admin",

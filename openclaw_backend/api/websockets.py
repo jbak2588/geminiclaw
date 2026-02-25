@@ -5,8 +5,10 @@ from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
 from agents.graph import create_dynamic_graph
-from agents.company_setup import generate_org_chart, COMPANY_PROFILES
+from agents.company_setup import generate_org_chart
 from tools.shell_tools import force_execute_command
+from core.memory import memory_store
+from agents.pi_agent import pi_agent_instance
 
 router = APIRouter()
 
@@ -151,36 +153,74 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             # Org Chart: Generate AI org chart for company
             # ─────────────────────────────────────────────
             if msg_type == "org_chart_request":
-                profile_id = payload.get("profile_id", "pt_humantric")
+                # Fallback to old profile if description isn't provided, but prioritize description.
+                company_desc = payload.get("company_description", "")
+                project_id = payload.get("project_id", client_id)
                 whitepaper_dir = payload.get("whitepaper_dir", "")
                 
-                profile = COMPANY_PROFILES.get(profile_id, {})
-                if not profile:
-                    profile = {
-                        "name": payload.get("company_name", "Company"),
-                        "type": payload.get("company_type", ""),
-                        "kbli": payload.get("kbli", ""),
-                        "country": payload.get("country", ""),
-                        "product": payload.get("product", ""),
-                        "current_team_size": payload.get("team_size", 1),
-                        "stage": payload.get("stage", ""),
-                    }
+                if not company_desc:
+                    profile_id = payload.get("profile_id", "pt_humantric")
+                    # Quick mock for backward compatibility
+                    company_desc = f"Company ID: {profile_id}. Type: {payload.get('company_type', 'Tech')}"
                 
                 await manager.send_personal_message(json.dumps({
                     "type": "info",
-                    "message": "AI가 조직도를 생성하고 있습니다..."
+                    "message": "AI가 조직도와 직무 기술서(Skills)를 생성하고 있습니다..."
                 }), client_id)
                 
-                org_chart = await generate_org_chart(profile, whitepaper_dir)
+                org_chart = await generate_org_chart(company_desc, project_id, whitepaper_dir)
                 
                 await manager.send_personal_message(json.dumps({
                     "type": "org_chart_response",
                     "data": org_chart
                 }), client_id)
                 continue
+
+            # ─────────────────────────────────────────────
+            # Base Assistant (Pi) 1:1 Chat Flow
+            # ─────────────────────────────────────────────
+            if msg_type == "pi_chat":
+                session_id = client_id # Use client_id as session for now
+                user_message = payload.get("message", "")
+                if not user_message:
+                    continue
+                
+                # Fetch history
+                history = memory_store.get_session_history(session_id)
+                
+                # Save User message
+                memory_store.add_message(session_id, "user", user_message)
+                
+                await manager.send_personal_message(json.dumps({
+                    "type": "info",
+                    "message": "Pi is thinking..."
+                }), client_id)
+                
+                # Process with Pi Agent
+                result = pi_agent_instance.chat(user_message, history)
+                
+                if result["status"] == "awaiting_approval":
+                    await manager.send_personal_message(json.dumps({
+                        "type": "approval_request",
+                        "command": result["pending_command"],
+                        "message": result["text"]
+                    }), client_id)
+                else:
+                    # Save assistant reply and broadcast
+                    reply = result.get("text", "")
+                    memory_store.add_message(session_id, "assistant", reply)
+                    
+                    await manager.send_personal_message(json.dumps({
+                        "type": "agent_event",
+                        "node": "pi",
+                        "status": result["status"],
+                        "message": reply
+                    }), client_id)
+                
+                continue
             
             # ─────────────────────────────────────────────
-            # Normal task flow
+            # Normal task flow (Multi-Agent Team)
             # ─────────────────────────────────────────────
             task_instruction = payload.get("task", "")
             if not task_instruction:
@@ -210,6 +250,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             # Build dynamic graph from team config
             dynamic_graph = create_dynamic_graph(team_config)
             
+            thread_id = payload.get("thread_id", client_id)
+            
             # Initialize state
             initial_state = {
                 "messages": [],
@@ -221,6 +263,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 "sub_tasks": {},
                 "agent_order": [],
                 "current_agent_index": 0,
+                "project_id": thread_id,
             }
             
             # Start streaming
@@ -232,8 +275,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             
             # 칸반 상태 추적용 (세션 내 유지)
             current_kanban_tasks: List[Dict] = []
-
-            for event in dynamic_graph.stream(initial_state):
+            for event in dynamic_graph.stream(initial_state, config={"configurable": {"thread_id": thread_id}}):
                 for node_name, state_value in event.items():
                     msg_content = ""
                     if "messages" in state_value and state_value["messages"]:

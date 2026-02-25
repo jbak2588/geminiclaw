@@ -1,8 +1,9 @@
 import json
 import os
+import copy
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Dict
+from typing import Dict, List
 from agents.graph import create_dynamic_graph
 from agents.company_setup import generate_org_chart, COMPANY_PROFILES
 from tools.shell_tools import force_execute_command
@@ -34,6 +35,59 @@ manager = ConnectionManager()
 
 # Track the last log file per client for HITL logging
 _client_log_files: Dict[str, str] = {}
+
+# ────────────────────────────────────────────────────
+# Kanban helpers
+# ────────────────────────────────────────────────────
+
+_REVIEWER_NODES = {"reviewer"}
+_PM_NODES = {"pm"}
+
+
+def _update_kanban_status(
+    kanban_tasks: List[Dict], node_name: str, new_status: str
+) -> List[Dict]:
+    """kanban_tasks 리스트에서 node_name에 해당하는 태스크의 status를 업데이트."""
+    updated = copy.deepcopy(kanban_tasks)
+    for task in updated:
+        if task.get("agent") == node_name:
+            task["status"] = new_status
+            break
+    return updated
+
+
+def _derive_kanban_update(
+    kanban_tasks: List[Dict], node_name: str, agent_status: str
+) -> List[Dict]:
+    """
+    에이전트 이벤트를 기반으로 kanban_tasks 상태를 결정합니다.
+    - pm 완료 → 모두 todo 유지 (초기 상태 그대로 전송)
+    - reviewer 진입 → 직전 에이전트 status: review
+    - dispatcher → 변경 없음 (skip)
+    - 일반 에이전트 → in_progress
+    - 완료(approved/done/completed) → done
+    """
+    if node_name == "dispatcher":
+        return kanban_tasks  # dispatcher는 UI에 영향 없음
+
+    if node_name in _PM_NODES:
+        return kanban_tasks  # PM 완료 → 초기 todo 상태 전송
+
+    if node_name in _REVIEWER_NODES:
+        # 직전 in_progress 에이전트를 review 상태로
+        updated = copy.deepcopy(kanban_tasks)
+        for task in updated:
+            if task.get("status") == "in_progress":
+                task["status"] = "review"
+        return updated
+
+    # 일반 에이전트
+    status_lower = agent_status.lower() if agent_status else ""
+    if any(kw in status_lower for kw in ("approved", "done", "completed", "finished")):
+        return _update_kanban_status(kanban_tasks, node_name, "done")
+    else:
+        return _update_kanban_status(kanban_tasks, node_name, "in_progress")
+
 
 def _write_log(log_file: str, text: str):
     """Append a line to the session log file."""
@@ -176,6 +230,9 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             }), client_id)
             _write_log(log_file, "[INFO] Agentic Team started working...\n")
             
+            # 칸반 상태 추적용 (세션 내 유지)
+            current_kanban_tasks: List[Dict] = []
+
             for event in dynamic_graph.stream(initial_state):
                 for node_name, state_value in event.items():
                     msg_content = ""
@@ -183,7 +240,33 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         msg_content = state_value["messages"][-1].content
                     
                     status = state_value.get("status", "unknown")
-                    
+
+                    # ─────────────────────────────────────────────
+                    # Kanban: PM 완료 시 초기 칸반 상태 세팅
+                    # ─────────────────────────────────────────────
+                    if node_name == "pm" and "kanban_tasks" in state_value:
+                        current_kanban_tasks = state_value["kanban_tasks"]
+
+                    # ─────────────────────────────────────────────
+                    # Kanban: 에이전트 이벤트마다 상태 업데이트
+                    # ─────────────────────────────────────────────
+                    if current_kanban_tasks and node_name not in ("pm",):
+                        current_kanban_tasks = _derive_kanban_update(
+                            current_kanban_tasks, node_name, status
+                        )
+
+                    # ─────────────────────────────────────────────
+                    # Kanban update 이벤트 전송
+                    # ─────────────────────────────────────────────
+                    if current_kanban_tasks:
+                        await manager.send_personal_message(
+                            json.dumps({
+                                "type": "kanban_update",
+                                "tasks": current_kanban_tasks,
+                            }),
+                            client_id,
+                        )
+
                     event_payload = {
                         "type": "agent_event",
                         "node": node_name,

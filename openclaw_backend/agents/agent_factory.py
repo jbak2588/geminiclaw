@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState
-from agents.agent_config import AgentConfig, COMPANY_CONTEXT
+from agents.agent_config import AgentConfig, COMPANY_CONTEXT, AGENTS_CONTEXT
 from core.config import settings
 from tools.file_tools import read_file, write_file
 from tools.shell_tools import execute_shell_command
@@ -67,9 +67,12 @@ def create_agent_node(config: AgentConfig):
         current_task = sub_tasks.get(config.name, state.get("current_task", ""))
         reviewer_feedback = state.get("reviewer_feedback", "")
         
-        # Build system prompt with company context + knowledge
+        # Build system prompt: SKILL.md + AGENTS 공통규칙 + COMPANY_CONTEXT + knowledge
         knowledge_context = _load_knowledge(config.knowledge_dir)
-        system_prompt = config.system_prompt + "\n" + COMPANY_CONTEXT
+        system_prompt = config.system_prompt
+        if AGENTS_CONTEXT:
+            system_prompt += "\n" + AGENTS_CONTEXT
+        system_prompt += "\n" + COMPANY_CONTEXT
         if knowledge_context:
             system_prompt += f"\n{knowledge_context}\n"
         

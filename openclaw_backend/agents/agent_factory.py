@@ -2,12 +2,13 @@
 Agent Factory: Dynamically creates LangGraph node functions from AgentConfig.
 """
 import os
+import logging
 from typing import Dict, Any, List
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState
 from agents.agent_config import AgentConfig, COMPANY_CONTEXT, AGENTS_CONTEXT
-from core.config import settings
+from core.config import settings, sanitize_project_id
 from tools.file_tools import read_file, write_file
 from tools.shell_tools import execute_shell_command
 
@@ -18,9 +19,27 @@ TOOL_REGISTRY = {
     "execute_shell_command": execute_shell_command,
 }
 
+# ──────────────────────────────────────────────
+# Cached LLM instances (avoid re-creating on every call)
+# ──────────────────────────────────────────────
+_llm_cache = {}
+
+def _get_llm(max_output_tokens: int = 1024) -> ChatGoogleGenerativeAI:
+    """Return a cached LLM instance for the given token limit."""
+    if max_output_tokens not in _llm_cache:
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is missing.")
+        _llm_cache[max_output_tokens] = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            api_key=settings.GEMINI_API_KEY,
+            max_output_tokens=max_output_tokens,
+        )
+    return _llm_cache[max_output_tokens]
+
 
 def _load_knowledge(project_id: str) -> str:
     """Load matching text/md files from the project's knowledge directory."""
+    project_id = sanitize_project_id(project_id)
     knowledge_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "knowledge", project_id)
     if not project_id or not os.path.isdir(knowledge_dir):
         return ""
@@ -33,8 +52,8 @@ def _load_knowledge(project_id: str) -> str:
                 with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()[:3000]  # Limit per file to save tokens
                 context_parts.append(f"--- {filename} ---\n{content}")
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(f"[Knowledge] Failed to read {filename}: {e}")
     
     if context_parts:
         return "\n\n[Reference Documents]\n" + "\n\n".join(context_parts[:5])  # Max 5 files
@@ -104,17 +123,10 @@ def create_agent_node(config: AgentConfig):
                 user_prompt += f"\n--- Agent's work to review ---\n{last_content}\n"
         
         try:
-            if not settings.GEMINI_API_KEY:
-                raise ValueError("GEMINI_API_KEY is missing.")
-            
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash-lite",
-                api_key=settings.GEMINI_API_KEY,
-                max_output_tokens=1024,
-            )
+            llm = _get_llm(max_output_tokens=1024)
             
             messages = [
-                HumanMessage(content=system_prompt),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ]
             
@@ -178,12 +190,14 @@ def create_agent_node(config: AgentConfig):
                     "pending_command": "",
                 }
             else:
-                # Reviewer rejected — pass feedback back
+                # Reviewer rejected — pass feedback back, increment retry count
+                current_retries = state.get("retry_count", 0)
                 return {
                     "messages": [AIMessage(content=f"[{config.role}]:\n{content}")],
                     "status": "rejected",
                     "reviewer_feedback": content,
                     "pending_command": "",
+                    "retry_count": current_retries + 1,
                 }
         
         # ─────────────────────────────────────────────

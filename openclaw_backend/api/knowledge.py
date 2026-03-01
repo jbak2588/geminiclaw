@@ -7,7 +7,7 @@ import json
 import uuid
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from core.config import settings
+from core.config import settings, sanitize_project_id
 from core.db import metadata_db
 
 router = APIRouter()
@@ -75,6 +75,9 @@ async def upload_knowledge_document(
 ):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    
+    # Sanitize project_id to prevent path traversal
+    project_id = sanitize_project_id(project_id)
         
     try:
         pdf_bytes = await file.read()

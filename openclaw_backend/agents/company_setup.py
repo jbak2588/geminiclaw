@@ -77,7 +77,7 @@ RULES:
 1. Output ONLY a valid JSON object with the structure shown below.
 2. Recommend 3-6 departments appropriate for this specific company.
 3. Each department must have a unique "id" matching one of these agent types:
-   [pm, admin, legal, accountant, developer, marketer, cs, hr, researcher, writer, designer]
+   [pm, admin, legal, accountant, developer, marketer, cs, hr]
 4. Set "priority" as "essential", "important", or "optional".
 5. Set "default_enabled" to true for essential/important departments.
 6. Write department names in Korean, descriptions in Korean.

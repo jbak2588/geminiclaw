@@ -17,3 +17,4 @@ class AgentState(TypedDict):
     current_agent_index: int    # Index into agent_order for sequential execution
     kanban_tasks: List[Dict]    # Kanban board state: [{id, agent, task, status, emoji}]
     project_id: str             # Project ID for dynamic skill manual resolution
+    retry_count: int            # Reviewer rejection count for current agent (prevents infinite loops)

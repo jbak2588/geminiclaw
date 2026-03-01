@@ -39,11 +39,11 @@
 ### 3.1 전체 프로세스
 
 ```
-사용자 정보 입력 → [AI 온보딩: 조직도/Skill 문서 자동 생성] → (프로젝트 워크스페이스 세팅)
+사용자정보 입력 → [AI 온보딩: 조직도/Skill 문서 자동 생성] → (프로젝트 워크스페이스 세팅)
                                 ↓
-CTO 일상 지시 → PM Agent → [Skill 문서 참조] → [부서별 실무 Agent] → Reviewer 검수 → 결과
-                                ↑                                              ↓
-                   (규정 변경 시 Skill 매뉴얼 자동 갱신)              순차 실행 (Dispatcher)
+CTO일상지시 → PM Agent→[Skill 문서참조] → [부서별실무 Agent]→Reviewer 검수→ 결과
+                                ↑                                     ↓
+                   (규정 변경 시 Skill 매뉴얼 자동 갱신)              순차 실행                        (Dispatcher)
 ```
 
 ### 3.2 기술 스택
@@ -62,20 +62,17 @@ CTO 일상 지시 → PM Agent → [Skill 문서 참조] → [부서별 실무 A
 openclaw_backend/
 ├── agents/
 │   ├── agent_config.py      # 9개 역할 정의 + 5개 팀 프리셋 + COMPANY_CONTEXT
-│   ├── agent_factory.py     # 동적 노드 생성 + Reviewer status 파싱 + LLM 캐싱
+│   ├── agent_factory.py     # 동적 노드 생성 + Reviewer status 파싱
 │   ├── company_setup.py     # AI 조직도 생성기
-│   ├── graph.py             # LangGraph 워크플로우 (SqliteSaver 상태 유지 + MAX_RETRIES)
+│   ├── graph.py             # LangGraph 워크플로우 (SqliteSaver 상태 유지)
 │   ├── pm_agent.py          # PM 에이전트 (태스크 분배)
 │   ├── pi_agent.py          # 베이스 개인 비서 (1:1 채팅)
-│   ├── state.py             # AgentState (retry_count 포함)
-│   └── _deprecated/         # 레거시 코드 (reviewer.py, worker.py)
+│   └── state.py             # AgentState
 ├── api/
 │   ├── websockets.py        # WebSocket API (org_chart, task, HITL, pi_chat)
-│   ├── rest.py              # REST API (프로젝트/팀 프리셋 CRUD)
-│   ├── knowledge.py         # Knowledge API (PDF 업로드/파싱)
-│   └── logs.py              # System Logs API (세션 히스토리 열람)
+│   └── rest.py              # REST API (프로젝트/팀 프리셋 CRUD)
 ├── core/
-│   ├── config.py            # 환경 변수 및 설정 (CORS, 샌드박스, sanitize_project_id)
+│   ├── config.py            # 환경 변수 및 설정 (샌드박스 설정 포함)
 │   ├── db.py                # 프로젝트 및 팀 메타데이터 보관 (SQLite)
 │   └── memory.py            # Pi 세션 영구 저장 어댑터
 ├── sandbox/
@@ -83,18 +80,13 @@ openclaw_backend/
 │   └── sandbox_manager.py   # 컨테이너 생명주기 관리 및 exec 모듈
 ├── tools/
 │   ├── file_tools.py        # read_file, write_file
-│   ├── system_tools.py      # 크로스플랫폼 시스템 도구 (알림, 클립보드 — macOS/Windows/Linux)
-│   ├── system_langchain.py  # system_tools LangChain 래퍼
-│   ├── skill_tools.py       # update_skill_manual (Skill 자가 발전)
+│   ├── system_tools.py      # macOS 제어 (알림, 클립보드)
 │   └── shell_tools.py       # execute_shell_command (DOCKER 샌드박스 및 HITL 통합)
-└── main.py                  # FastAPI 라우터 모음 (port 8001)
+└── main.py                  # FastAPI 라우터 모음
 
 openclaw_app/
 └── lib/
-    ├── main.dart            # Dual-Mode UI (Pi Assistant / Team Orchestrator)
-    └── screens/
-        ├── knowledge_screen.dart  # Knowledge Library UI
-        └── logs_screen.dart       # System Logs UI
+    └── main.dart            # Dual-Mode UI (Pi Assistant / Team Orchestrator)
 ```
 
 ---
@@ -119,11 +111,11 @@ openclaw_app/
 
 ### 4.1 현재 에이전트가 접근 가능한 방법
 
-| 방법 | 가능 여부 | 설명 |
-|---|---|---|
-| **로컬 프로젝트 폴더** (`C:\bling\bling_app`) | ✅ 가능 | `read_file` 도구로 직접 읽기 가능 |
+| 방법                                            | 가능 여부    | 설명                                                |
+| --------------------------------------------- | -------- | ------------------------------------------------- |
+| **로컬 프로젝트 폴더** (`C:\bling\bling_app`)         | ✅ 가능     | `read_file` 도구로 직접 읽기 가능                          |
 | **GitHub repo** (`github.com/jbak2588/bling`) | ⚠️ 간접 가능 | `execute_shell_command`로 `git clone` 또는 `curl` 가능 |
-| **GitHub API** | ❌ 직접 불가 | 별도 도구 추가 필요 (향후) |
+| **GitHub API**                                | ❌ 직접 불가  | 별도 도구 추가 필요 (향후)                                  |
 
 ### 4.2 권장 방식: 로컬 폴더 참조
 
@@ -158,7 +150,7 @@ TOOL_REGISTRY = {
 | 항목 | 상태 | 내용 |
 |---|---|---|
 | Pi Agent (개인비서) | ✅ | PM을 거치지 않는 직접 1:1 채팅 에이전트 구축 |
-| 로컬 시스템 툴 연동 | ✅ | 크로스플랫폼 알림 발송, 클립보드 읽기/쓰기 (macOS/Windows/Linux) |
+| 로컬 시스템 툴 연동 | ✅ | macOS 알림 발송, 클립보드 읽기/쓰기 도구 추가 |
 | 세션 메모리 보관 | ✅ | SQLite를 활용한 Pi 에이전트의 이전 대화 기억 |
 
 ### Phase 1: Core Agent Engine & PoC (✅ 완료)
@@ -197,25 +189,12 @@ TOOL_REGISTRY = {
 | Skill 매뉴얼 자동 생성 및 RAG 연동 | ✅ | 프로젝트별 부서 매뉴얼(.md)을 런타임에 자동 생성 및 에이전트 프롬프트에 동적 주입 |
 | Self-Evolution (툴 연동 자가발전) | ✅ | Pi Agent를 통한 `update_skill_manual` 도구 실행으로 LLM 지침서 자체 수정 |
 
-### Phase 6: Global Knowledge Library & PDF Parsing (✅ 완료)
-| 항목 | 상태 | 내용 |
-|---|---|---|
-| 문서 메타데이터 전역 리스트     | ✅ | 모든 프로젝트의 지식 분서(제목, 요약, 소속 프로젝트)를 한눈에 보는 전역 서재 UI 제공 |
-| PDF 자동 파싱 및 요약          | ✅ | API를 통해 PDF 업로드 시 Gemini가 Markdown 원문 변환 및 요약본 즉시 추출 (`pypdf` 연동) |
-| RAG 에이전트 주입 파이프라인    | ✅ | 선택된 프로젝트(`project_id`)의 로컬 `.md` 지식을 모든 워커 에이전트의 System Prompt에 동적 주입 |
-
-### Phase 7: System Logs UI (✅ 완료)
-| 항목 | 상태 | 내용 |
-|---|---|---|
-| Split View 로그 뷰어           | ✅ | 프론트엔드 네비게이션에 `System Logs` 메뉴 추가하여 파일 목록과 상세 내용을 동시 제공 |
-| 세션 히스토리 추적             | ✅ | 백엔드 `logs/` 디렉토리에 쌓인 에이전트들의 실시간 생각 및 워크플로우 통신 내역 열람 API 연동 |
-
-### Phase 8: 백오피스 통합 및 외부 연동 (🔷 확장 계획)
-| 항목 | 상태 | 내용 |
-|---|---|---|
-| 모바일 호환성 최적화    | ⬜ | Flutter 웹 접속 시 모바일 반응형(Responsive) 완벽 처리 |
-| GitHub 저장소 연동 도구 | ⬜ | GitHub API로 저장소 코드 직접 탐색 및 PR 자동 생성 도구 추가 |
-| 웹 검색 및 크롤링 확장 | ⬜ | 특정 정보 부족 시 DuckDuckGo 또는 Google 검색 API를 통한 부족한 문맥 자동 수집 기능 |
+### Phase 6: 고급 도구 및 RAG 파이프라인 연장 (🔷 확장 계획)
+| 항목           | 상태  | 내용                                     |
+| ------------ | --- | -------------------------------------- |
+| 모바일 호환성 최적화  | ⬜   | Flutter 웹 접속 시 모바일 반응형 완벽 처리           |
+| GitHub 연동 도구 | ⬜   | GitHub API로 저장소 코드 직접 탐색/PR 생성 도구 추가   |
+| 파일 파싱 고도화    | ⬜   | PDF(사업자등록증 파싱), Excel 문서 기반 LLM 조회 최적화 |
 
 ---
 
@@ -233,12 +212,10 @@ TOOL_REGISTRY = {
 | NIB | 사업자등록번호 (OSS) | `nib.pdf` |
 | PKKPR | 위치적합성 확인서 | `pkkpr.pdf` |
 
-### 6.2 에이전트 참조 위치 및 주입 방법 (RAG)
+### 6.2 에이전트 참조 방법
 
-현재 텍스트(`.md`, `.txt`, `.json`) 파일이 자동 참조됩니다. (Phase 6에서 구현)
-* **저장 경로**: `openclaw_backend/storage/knowledge/{project_id}/`
-* **파일 등록 방식**: Flutter 앱의 **Knowledge Library** 우측 하단 "Upload PDF" 기능을 통해 PDF 파일을 업로드하면, 백엔드에서 `pypdf`와 Gemini를 사용해 텍스트를 파싱하고 본문을 Markdown으로 변환하여 저장합니다. 동시에 전역 DB(`metadata.db`)에 요약 데이터를 추가합니다.
-* **주입 방식**: 워크플로우 실행 시(`agent_factory.py`), 워커 에이전트 및 Pi 에이전트는 타겟 `project_id` 폴더 내의 모든 `.md` 문서 내용을 자신의 `<SystemPrompt>` 마지막에 병합하여 추가 컨텍스트로 학습합니다.
+현재 `.md`, `.txt`, `.json` 파일만 자동 참조.
+PDF → 텍스트 변환 필요 (Phase 2에서 PyPDF2 추가 예정).
 
 ---
 
@@ -255,77 +232,28 @@ TOOL_REGISTRY = {
 2. `graph.py`: Dispatcher 노드 기반 순차 실행
 3. `agent_config.py`: COMPANY_CONTEXT 주입으로 "정보 요청" 루프 방지
 
-### 7.2 코드 점검 및 보안 강화 (2026-02-26 수정)
-
-백엔드 전체 26개 파일에 대한 종합 코드 점검을 실시하여, 크리티컬 4건과 주요 5건을 수정했습니다.
-
-#### 🔴 크리티컬 수정 (4건)
-
-| ID | 파일 | 문제 | 수정 내용 |
-|---|---|---|---|
-| C1 | `state.py`, `graph.py`, `agent_factory.py` | §7.1에서 수정된 무한 루프가 `MAX_RETRIES` 미적용으로 재발 가능 | `retry_count` 필드 추가, Reviewer reject 시 카운트 증가, MAX_RETRIES(2) 초과 시 강제 다음 에이전트로 이동 |
-| C2 | `config.py`, `agent_factory.py`, `knowledge.py` | `project_id` 입력값이 파일 경로에 직접 사용 → Path Traversal 취약점 | `sanitize_project_id()` 유틸리티 추가 (영숫자+하이픈+언더스코어만 허용, 위반 시 `"default"` 반환) |
-| C3 | `agent_factory.py`, `pm_agent.py` | 시스템 프롬프트를 `HumanMessage`로 전송 → 프롬프트 주입 취약 | `SystemMessage`로 변경하여 시스템/사용자 프롬프트 분리 (`pi_agent.py`와 통일) |
-| C4 | `main.py`, `config.py` | CORS `allow_origins=["*"]` → 프로덕션 보안 위험 | `ALLOWED_ORIGINS` 환경변수 기반 제어 (기본: `localhost:8080`만 허용) |
-
-#### 🟠 주요 수정 (5건)
-
-| ID | 파일 | 문제 | 수정 내용 |
-|---|---|---|---|
-| M1 | `agents/_deprecated/` | `reviewer.py`, `worker.py`가 Dead Code (어디서도 import 안 됨) | `_deprecated/` 폴더로 이동, README 추가 |
-| M2 | `system_tools.py`, `system_langchain.py` | macOS 전용 명령어(`osascript`, `pbpaste`)만 지원 → Windows 미작동 | 크로스플랫폼 재작성 (Windows: PowerShell, Linux: notify-send/xclip) |
-| M3 | `websockets.py` | Pi Chat에서 `project_id` 미전달 → Pi Agent가 프로젝트별 Knowledge/Skill 참조 불가 | `payload.get("project_id", "default")` 추출 후 `pi_agent.chat()`에 전달 |
-| M4 | `agent_factory.py` | 매 호출마다 `ChatGoogleGenerativeAI` 인스턴스 재생성 → 성능 낭비 | `_get_llm()` 캐시 함수 도입, token limit별 싱글턴 패턴 |
-| M5 | `main.py` | 기본 포트 `8000`으로 실행 vs 기획문서 §8.1은 `8001` 안내 | 포트 `8001`로 통일 |
-
-#### 🟡 개선 권고 수정 (6건)
-
-| ID | 파일 | 문제 | 수정 내용 |
-|---|---|---|---|
-| I1 | `agent_config.py` | `SKILLS_DIR = r"E:\geminiclaw\skills"` 절대경로 하드코딩 | `os.path.join(__file__, ..)` 기반 상대 경로로 변경 |
-| I2 | `websockets.py` | `knowledge_dir = r"E:\geminiclaw\doc"` 절대경로 하드코딩 | `os.path.join(__file__, ..)` 기반 상대 경로로 변경 |
-| I3 | `agent_factory.py` | `except Exception: pass` — 예외 무시 (디버깅 불가) | `logging.warning()` 으로 변경하여 발생 예외 로깅 |
-| I4 | `graph.py` | 모듈 로드 시 글로벌 `sqlite3.connect()` → 멀티스레드 환경에서 충돌 위험 | `_get_memory()` 함수로 요청마다 새 연결 생성 패턴 적용 |
-| I5 | `agent_config.py`, `websockets.py` | `print()` 직접 호출 — 로그 레벨/파일 관리 불가 | `import logging` + `logger.info()`/`logger.warning()` 전환 |
-| I6 | `company_setup.py` | 프롬프트에 `researcher`, `writer`, `designer` 포함되나 AVAILABLE_ROLES에 미정의 | 미정의 3개 역할 프롬프트에서 제거 |
-
 ---
 
 ## 8. 사용자 매뉴얼 (User Manual)
 
 GeminiClaw AI OS를 효율적으로 사용하기 위한 핵심 가이드입니다. 
-
 ### 8.1 시작하기 (Getting Started)
 1. **백엔드 서버 실행**: `openclaw_backend` 디렉토리 내 `.env` 파일에 `GEMINI_API_KEY`를 설정합니다. 그 후 터미널에서 `uvicorn main:app --reload --port 8001` 명령어로 서버를 실행합니다.
 2. **UI 실행**: `openclaw_app` 디렉토리에서 `flutter run -d web-server --web-hostname 127.0.0.1 --web-port 8080` 명령어로 웹 프론트엔드를 구동합니다.
 3. 브라우저에서 `http://127.0.0.1:8080/`에 접속하여 대시보드에 진입합니다.
-
 ### 8.2 새로운 회사/조직 환경 구축 (Onboarding)
 1. 좌측 사이드바 하단 아이콘 중 **'Team OS'**(오케스트레이터 뷰) 버튼을 클릭합니다.
 2. 우측 상단의 **`+ Create Global Project`** 버튼을 눌러 새로운 프로젝트를 생성합니다. (예: `AI_Startup_Project`)
 3. 바로 아래의 **'Select Project context...'** 드롭다운에서 방금 만든 프로젝트를 선택합니다.
 4. **'Target & Goals'** 입력란에 회사의 비전과 현재 목표를 구체적으로 적습니다. (예: "우리는 B2B SaaS 앱을 만드는 3인 개발팀입니다.")
 5. **`Generate Custom Org & Skills`** 버튼을 누릅니다. AI가 목표를 분석하여 최적의 부서를 구성하고 해당 부서들의 매뉴얼 파일을 `openclaw_backend/storage/skills/{project_id}/` 경로에 일괄 생성합니다.
-
 ### 8.3 일상적인 업무 지시 (Tasks & PM)
 1. Team OS 화면 하단 **Task Instruction** 입력창에 지시사항을 입력합니다. (예: "다음 주 런칭을 위한 랜딩 페이지 카피라이팅 초안과 개발 계획서 작성해줘")
 2. 하단의 **'Deploy Target Team'** 을 누르면 PM Agent가 이를 수신하여, 이전에 구성된 팀원들(부서)에게 서브 태스크를 분할하고 칸반 보드 뷰에 할당합니다.
 3. 이후 에이전트들은 자신의 동적 매뉴얼(Skill)을 읽어가며 차례대로 순차 작업을 진행하며, 리뷰어(Reviewer)의 검증을 거친 후 완료됩니다.
-
 ### 8.4 자가 발전 및 매뉴얼 갱신 (Self-Evolution)
 *   에이전트들의 작업 결과물 형식이 마음에 들지 않거나, 회사의 규칙이 바뀌었다면 별도로 파일을 수정할 필요가 없습니다.
 1. 좌측 사이드바 상단 아이콘 중 **'Pi Assistant'**(채팅 뷰)를 클릭합니다.
 2. 하단 채팅창에 다음과 같이 지시합니다: 
    > *"현재 프로젝트의 개발자(developer) 매뉴얼을 업데이트해 줘. 앞으로 모든 코드 작성 시 주석을 한국어로 달아야 한다는 규칙을 맨 밑에 추가해."*
 3. Pi Agent가 내부 `update_skill_manual` 도구를 사용하여 스스로 기존 마크다운 매뉴얼 파일 구조를 해치지 않으면서 규칙을 훌륭하게 추가합니다. 이후의 모든 태스크들은 이 수정된 규칙을 따르게 됩니다.
-
-### 8.5 글로벌 지식 라이브러리 사용 (RAG & Knowledge)
-1. 좌측 사이드바 하단 아이콘 중 **'Knowledge Library'**(지식 서재 뷰) 버튼을 클릭합니다.
-2. 현재까지 저장된 모든 프로젝트의 지식 문서 목록과 요약본(Summary 및 TOC)을 확인할 수 있습니다.
-3. 새로운 지식을 주입하려면 우측 하단의 **'Upload PDF'** 를 누른 뒤, 이 사내 문서를 적용받을 특정 **`Project`** 를 선택하고 PDF 파일을 첨부합니다.
-4. 백엔드가 PDF를 자동 변환하여 해당 프로젝트의 에이전트들에게 RAG (검색 증강 생성) 형태로 실시간 컨텍스트를 주입합니다.
-
-### 8.6 시스템 로그 뷰어 (System Logs)
-1. 프론트엔드 좌측 사이드바 최하단의 **'System Logs'** 메뉴를 클릭합니다.
-2. 왼쪽 목록에 시간 역순으로 쌓여있는 워크플로우 통신 기록(`session_***.txt`) 파일들을 볼 수 있습니다.
-3. 특정 세션을 클릭하면 우측 뷰어에 당시 에이전트들이 나눈 대화, 사용된 도구의 내역, API 상태 코드 등을 원문으로 투명하게 열람할 수 있습니다. 에이전트의 행동을 디버깅하거나 추적할 때 유용합니다.

@@ -58,5 +58,40 @@ class SessionMemoryStore:
             cursor.execute("DELETE FROM session_messages WHERE session_id = ?", (session_id,))
             conn.commit()
 
+    def compact_session(self, session_id: str, summary: str):
+        """Replace all session messages with a single compressed summary.
+        
+        This deletes the existing conversation and stores the summary
+        as a 'system' role message, which the Pi Agent interprets as
+        prior context.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            # Count messages before deletion for reporting
+            cursor.execute(
+                "SELECT COUNT(*) FROM session_messages WHERE session_id = ?",
+                (session_id,)
+            )
+            count = cursor.fetchone()[0]
+            # Delete all existing messages
+            cursor.execute("DELETE FROM session_messages WHERE session_id = ?", (session_id,))
+            # Insert summary as a system message
+            cursor.execute(
+                "INSERT INTO session_messages (session_id, role, content) VALUES (?, ?, ?)",
+                (session_id, "system", summary)
+            )
+            conn.commit()
+            return count
+
+    def get_message_count(self, session_id: str) -> int:
+        """Return the number of messages in a session."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM session_messages WHERE session_id = ?",
+                (session_id,)
+            )
+            return cursor.fetchone()[0]
+
 # Global instance
 memory_store = SessionMemoryStore()

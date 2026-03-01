@@ -3,7 +3,7 @@ PM Agent: Analyzes CTO instructions and routes sub-tasks to team members.
 """
 import json
 from typing import Dict, Any
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.state import AgentState
 from core.config import settings
@@ -63,16 +63,19 @@ def pm_node(state: AgentState) -> Dict[str, Any]:
             "kanban_tasks": _build_kanban_tasks(default_tasks, default_order),
         }
 
-    prompt = (
-        f"You are a PM Agent. Analyze the following task and assign sub-tasks to available team members.\n\n"
+    system_prompt = (
+        "You are a PM Agent. Your job is to analyze the CTO's instruction "
+        "and assign sub-tasks to available team members.\n"
+        "RULES:\n"
+        "1. Output ONLY a valid JSON object mapping agent names to their tasks.\n"
+        "2. Only assign to agents in the available list.\n"
+        "3. Each task should be a clear, actionable instruction.\n"
+        "4. If only one agent fits, assign the full task to that agent.\n\n"
+        'Example output: {"developer": "Create hello.txt with current date", "legal": "Draft privacy policy"}\n'
+    )
+    user_prompt = (
         f"Available team members: {', '.join(team_members)}\n\n"
-        f"CTO's instruction: {current_task}\n\n"
-        f"RULES:\n"
-        f"1. Output ONLY a valid JSON object mapping agent names to their tasks.\n"
-        f"2. Only assign to agents in the available list above.\n"
-        f"3. Each task should be a clear, actionable instruction.\n"
-        f"4. If only one agent fits, assign the full task to that agent.\n\n"
-        f'Example output: {{"developer": "Create hello.txt with current date", "legal": "Draft privacy policy"}}\n'
+        f"CTO's instruction: {current_task}\n"
     )
 
     try:
@@ -84,7 +87,7 @@ def pm_node(state: AgentState) -> Dict[str, Any]:
             api_key=settings.GEMINI_API_KEY,
             max_output_tokens=512,
         )
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         content = response.content.strip()
 
         # Parse JSON from response (handle markdown code blocks)

@@ -24,8 +24,12 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
   Future<void> _fetchRESTData() async {
     setState(() => _isLoading = true);
     try {
-      final docsRes = await http.get(Uri.parse('http://localhost:8001/api/projects/knowledge'));
-      final projRes = await http.get(Uri.parse('http://localhost:8001/api/projects'));
+      final docsRes = await http.get(
+        Uri.parse('http://localhost:8001/api/projects/knowledge'),
+      );
+      final projRes = await http.get(
+        Uri.parse('http://localhost:8001/api/projects'),
+      );
 
       if (docsRes.statusCode == 200) {
         setState(() {
@@ -45,7 +49,9 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
   }
 
   Future<void> _showUploadDialog() async {
-    String? selectedProjectId = _projects.isNotEmpty ? _projects.first['id'] as String : null;
+    String? selectedProjectId = _projects.isNotEmpty
+        ? _projects.first['id'] as String
+        : null;
     PlatformFile? selectedFile;
 
     await showDialog(
@@ -62,27 +68,34 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
                   const Text('Select Target Project:'),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: selectedProjectId,
+                    initialValue: selectedProjectId,
                     isExpanded: true,
-                    items: _projects.map((p) => DropdownMenuItem<String>(
-                      value: p['id'] as String,
-                      child: Text(p['name'] as String),
-                    )).toList(),
+                    items: _projects
+                        .map(
+                          (p) => DropdownMenuItem<String>(
+                            value: p['id'] as String,
+                            child: Text(p['name'] as String),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (val) {
                       setDialogState(() {
                         selectedProjectId = val;
                       });
                     },
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: () async {
-                      FilePickerResult? result = await FilePicker.platform.pickFiles(
-                        type: FileType.custom,
-                        allowedExtensions: ['pdf'],
-                        withData: true, // Needed for web
-                      );
+                      FilePickerResult? result = await FilePicker.platform
+                          .pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['pdf'],
+                            withData: true, // Needed for web
+                          );
                       if (result != null) {
                         setDialogState(() {
                           selectedFile = result.files.first;
@@ -95,7 +108,10 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
                   if (selectedFile != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
-                      child: Text('Selected: \${selectedFile!.name}', style: const TextStyle(color: Colors.green)),
+                      child: Text(
+                        'Selected: \${selectedFile!.name}',
+                        style: const TextStyle(color: Colors.green),
+                      ),
                     ),
                 ],
               ),
@@ -128,17 +144,18 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
         'POST',
         Uri.parse('http://localhost:8001/api/projects/\$projectId/knowledge'),
       );
-      
-      request.files.add(http.MultipartFile.fromBytes(
-        'file',
-        file.bytes!,
-        filename: file.name,
-      ));
+
+      request.files.add(
+        http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name),
+      );
 
       var response = await request.send();
+      if (!mounted) return;
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Upload successful! Processing complete.')),
+          const SnackBar(
+            content: Text('Upload successful! Processing complete.'),
+          ),
         );
         _fetchRESTData();
       } else {
@@ -149,9 +166,10 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
       }
     } catch (e) {
       debugPrint("Upload Error: \$e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading file: \$e')),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error uploading file: \$e')));
       setState(() => _isLoading = false);
     }
   }
@@ -172,73 +190,88 @@ class _KnowledgeLibraryViewState extends State<KnowledgeLibraryView> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _documents.isEmpty
-              ? const Center(child: Text('No knowledge documents found.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _documents.length,
-                  itemBuilder: (context, index) {
-                    final doc = _documents[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+          ? const Center(child: Text('No knowledge documents found.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _documents.length,
+              itemBuilder: (context, index) {
+                final doc = _documents[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    doc['title'] ?? 'Untitled',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.indigo.shade900,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    "Project: ${doc['project_id']}",
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              doc['summary'] ?? 'No summary available.',
-                              style: TextStyle(color: Colors.grey.shade400),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text('Contents:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(height: 4),
-                            Text(
-                              doc['toc'] ?? '',
-                              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                              maxLines: 5,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.bottomRight,
+                            Expanded(
                               child: Text(
-                                "Uploaded at: ${doc['uploaded_at']}",
-                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                doc['title'] ?? 'Untitled',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            )
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.indigo.shade900,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                "Project: ${doc['project_id']}",
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        const SizedBox(height: 8),
+                        Text(
+                          doc['summary'] ?? 'No summary available.',
+                          style: TextStyle(color: Colors.grey.shade400),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Contents:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          doc['toc'] ?? '',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Text(
+                            "Uploaded at: ${doc['uploaded_at']}",
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showUploadDialog,
         icon: const Icon(Icons.upload_file),

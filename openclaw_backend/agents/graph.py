@@ -13,12 +13,16 @@ from agents.pm_agent import pm_node
 from agents.agent_config import AgentConfig, AVAILABLE_ROLES
 from agents.agent_factory import create_agent_node
 
-# Global memory checkpointer
+# Storage directory for SQLite checkpointer
 STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
 os.makedirs(STORAGE_DIR, exist_ok=True)
-db_path = os.path.join(STORAGE_DIR, "team_state.db")
-conn = sqlite3.connect(db_path, check_same_thread=False)
-memory = SqliteSaver(conn)
+DB_PATH = os.path.join(STORAGE_DIR, "team_state.db")
+
+
+def _get_memory():
+    """Create a new SqliteSaver per call to ensure thread-safety."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    return SqliteSaver(conn)
 
 
 def create_dynamic_graph(team_config: list):
@@ -80,11 +84,12 @@ def create_dynamic_graph(team_config: list):
     # 4. Add dispatcher node (routes to next agent)
     # ─────────────────────────────────────────────
     def dispatcher_node(state: AgentState):
-        """Advances current_agent_index and routes to next agent."""
+        """Advances current_agent_index and routes to next agent. Resets retry_count."""
         idx = state.get("current_agent_index", 0)
         return {
             "current_agent_index": idx + 1,
             "status": "dispatching",
+            "retry_count": 0,
         }
     
     workflow.add_node("dispatcher", dispatcher_node)
@@ -174,12 +179,16 @@ def create_dynamic_graph(team_config: list):
     # We need conditional edges that can determine the reject target dynamically
     def review_router(state: AgentState) -> str:
         status = state.get("status", "")
+        retry_count = state.get("retry_count", 0)
         if status == "approved":
             return "dispatcher"
         elif status == "error":
             return "__end__"
         else:
-            # Rejected: route back to current agent
+            # Rejected: check retry limit before routing back
+            if retry_count >= MAX_RETRIES:
+                # Max retries exceeded → force move to next agent
+                return "dispatcher"
             agent_order = state.get("agent_order", agent_names)
             idx = state.get("current_agent_index", 0)
             if idx < len(agent_order):
@@ -201,7 +210,7 @@ def create_dynamic_graph(team_config: list):
     # ─────────────────────────────────────────────
     # 6. Compile
     # ─────────────────────────────────────────────
-    return workflow.compile(checkpointer=memory)
+    return workflow.compile(checkpointer=_get_memory())
 
 
 # Default graph for backward compatibility (2-agent team)

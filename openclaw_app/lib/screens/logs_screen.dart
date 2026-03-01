@@ -12,7 +12,7 @@ class SystemLogsView extends StatefulWidget {
 class _SystemLogsViewState extends State<SystemLogsView> {
   List<dynamic> _logs = [];
   bool _isLoading = false;
-  
+
   String? _selectedFilename;
   String _logContent = "Select a log file to view details.";
   bool _isLoadingContent = false;
@@ -45,9 +45,11 @@ class _SystemLogsViewState extends State<SystemLogsView> {
       _isLoadingContent = true;
       _logContent = "Loading...";
     });
-    
+
     try {
-      final res = await http.get(Uri.parse('http://localhost:8001/api/logs/$filename'));
+      final res = await http.get(
+        Uri.parse('http://localhost:8001/api/logs/$filename'),
+      );
       if (res.statusCode == 200) {
         setState(() {
           _logContent = jsonDecode(res.body)['content'] ?? "No content.";
@@ -75,7 +77,7 @@ class _SystemLogsViewState extends State<SystemLogsView> {
       return timestampStr;
     }
   }
-  
+
   String _formatSize(String bytesStr) {
     try {
       int bytes = int.parse(bytesStr);
@@ -117,30 +119,42 @@ class _SystemLogsViewState extends State<SystemLogsView> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _logs.isEmpty
-                      ? const Center(child: Text('No logs found.'))
-                      : ListView.separated(
-                          itemCount: _logs.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final log = _logs[index];
-                            final isSelected = _selectedFilename == log['filename'];
-                            
-                            return ListTile(
-                              selected: isSelected,
-                              selectedTileColor: Colors.indigo.shade900.withOpacity(0.5),
-                              leading: const Icon(Icons.description, color: Colors.grey),
-                              title: Text(log['filename'] ?? '', style: const TextStyle(fontSize: 14)),
-                              subtitle: Text(
-                                "${_formatDate(log['modified_at'])} • ${_formatSize(log['size_bytes'])}",
-                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                              ),
-                              onTap: () => _fetchLogContent(log['filename']),
-                            );
-                          },
-                        ),
+                  ? const Center(child: Text('No logs found.'))
+                  : ListView.separated(
+                      itemCount: _logs.length,
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final log = _logs[index];
+                        final isSelected = _selectedFilename == log['filename'];
+
+                        return ListTile(
+                          selected: isSelected,
+                          selectedTileColor: Colors.indigo.shade900.withValues(
+                            alpha: 0.5,
+                          ),
+                          leading: const Icon(
+                            Icons.description,
+                            color: Colors.grey,
+                          ),
+                          title: Text(
+                            log['filename'] ?? '',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            "${_formatDate(log['modified_at'])} • ${_formatSize(log['size_bytes'])}",
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
+                          ),
+                          onTap: () => _fetchLogContent(log['filename']),
+                        );
+                      },
+                    ),
             ),
           ),
-          
+
           // Right side: Detail
           Expanded(
             flex: 5,
@@ -153,7 +167,10 @@ class _SystemLogsViewState extends State<SystemLogsView> {
                   if (_selectedFilename != null) ...[
                     Text(
                       _selectedFilename!,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                     const Divider(),
                   ],

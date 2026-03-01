@@ -1,6 +1,7 @@
 import json
 import os
 import copy
+import logging
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
@@ -177,18 +178,45 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 continue
 
             # ─────────────────────────────────────────────
-            # Base Assistant (Pi) 1:1 Chat Flow
+            # Base Assistant (Pi) 1:1 Chat Flow (Streaming + /compact)
             # ─────────────────────────────────────────────
             if msg_type == "pi_chat":
-                session_id = client_id # Use client_id as session for now
+                session_id = client_id
                 user_message = payload.get("message", "")
+                project_id = payload.get("project_id", "default")
                 if not user_message:
                     continue
                 
-                # Fetch history
-                history = memory_store.get_session_history(session_id)
+                # ── Handle /compact command ──
+                if user_message.strip().lower() == "/compact":
+                    history = memory_store.get_session_history(session_id)
+                    msg_count = memory_store.get_message_count(session_id)
+                    
+                    if msg_count <= 2:
+                        await manager.send_personal_message(json.dumps({
+                            "type": "pi_compact",
+                            "summary": "세션이 이미 충분히 짧습니다.",
+                            "saved_messages": 0
+                        }), client_id)
+                        continue
+                    
+                    await manager.send_personal_message(json.dumps({
+                        "type": "info",
+                        "message": f"📦 {msg_count}개 메시지를 요약 중..."
+                    }), client_id)
+                    
+                    summary = pi_agent_instance.compact_history(history)
+                    saved = memory_store.compact_session(session_id, summary)
+                    
+                    await manager.send_personal_message(json.dumps({
+                        "type": "pi_compact",
+                        "summary": summary,
+                        "saved_messages": saved
+                    }), client_id)
+                    continue
                 
-                # Save User message
+                # ── Streaming response flow ──
+                history = memory_store.get_session_history(session_id)
                 memory_store.add_message(session_id, "user", user_message)
                 
                 await manager.send_personal_message(json.dumps({
@@ -196,25 +224,60 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     "message": "Pi is thinking..."
                 }), client_id)
                 
-                # Process with Pi Agent
-                result = pi_agent_instance.chat(user_message, history)
-                
-                if result["status"] == "awaiting_approval":
-                    await manager.send_personal_message(json.dumps({
-                        "type": "approval_request",
-                        "command": result["pending_command"],
-                        "message": result["text"]
-                    }), client_id)
-                else:
-                    # Save assistant reply and broadcast
-                    reply = result.get("text", "")
-                    memory_store.add_message(session_id, "assistant", reply)
+                full_text = ""
+                async for event in pi_agent_instance.chat_stream(user_message, history, project_id=project_id):
+                    event_type = event.get("type", "")
                     
+                    if event_type == "chunk":
+                        await manager.send_personal_message(json.dumps({
+                            "type": "pi_stream",
+                            "chunk": event["content"]
+                        }), client_id)
+                        full_text += event["content"]
+                    
+                    elif event_type == "tool_call":
+                        await manager.send_personal_message(json.dumps({
+                            "type": "pi_tool_call",
+                            "tool": event["tool"],
+                            "args": event["args"]
+                        }), client_id)
+                    
+                    elif event_type == "tool_result":
+                        await manager.send_personal_message(json.dumps({
+                            "type": "pi_tool_result",
+                            "tool": event["tool"],
+                            "result": event["result"][:500]  # Truncate large results
+                        }), client_id)
+                    
+                    elif event_type == "approval":
+                        await manager.send_personal_message(json.dumps({
+                            "type": "approval_request",
+                            "command": event["pending_command"],
+                            "message": event["text"]
+                        }), client_id)
+                        # Don't save — awaiting approval
+                        full_text = ""
+                        break
+                    
+                    elif event_type == "done":
+                        full_text = event.get("full_text", full_text)
+                    
+                    elif event_type == "error":
+                        await manager.send_personal_message(json.dumps({
+                            "type": "agent_event",
+                            "node": "pi",
+                            "status": "error",
+                            "message": event["message"]
+                        }), client_id)
+                        full_text = ""
+                        break
+                
+                # Save and send final event
+                if full_text:
+                    memory_store.add_message(session_id, "assistant", full_text)
                     await manager.send_personal_message(json.dumps({
-                        "type": "agent_event",
-                        "node": "pi",
-                        "status": result["status"],
-                        "message": reply
+                        "type": "pi_stream_end",
+                        "full_text": full_text
                     }), client_id)
                 
                 continue
@@ -231,7 +294,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             team_config = payload.get("team", [{"name": "developer"}])
             
             # Inject knowledge directory for all agents
-            knowledge_dir = r"E:\geminiclaw\doc"
+            knowledge_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "doc")
             for member in team_config:
                 if "knowledge_dir" not in member or not member["knowledge_dir"]:
                     member["knowledge_dir"] = knowledge_dir
@@ -337,7 +400,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             }), client_id)
             _write_log(log_file, f"\n[INFO] Workflow Completed.")
             _write_log(log_file, f"Log saved to: {log_file}")
-            print(f"📝 Session log saved: {log_file}")
+            logging.info(f"Session log saved: {log_file}")
             
     except WebSocketDisconnect:
         manager.disconnect(client_id)

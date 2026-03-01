@@ -8,7 +8,7 @@
         "type": "tabs",
         "children": [
           {
-            "id": "61fd65f82e860efe",
+            "id": "6564776dbd0c1739",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -20,8 +20,51 @@
               "icon": "lucide-file",
               "title": "Task"
             }
+          },
+          {
+            "id": "0582c707d22b9831",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "GeminiClaw  AI 기반 회사 운영 OS — 기획문서.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "GeminiClaw  AI 기반 회사 운영 OS — 기획문서"
+            }
+          },
+          {
+            "id": "89e6a96c13755084",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "GeminiClaw Pi Agent vs OpenClaw — 기능 비교 분석.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "GeminiClaw Pi Agent vs OpenClaw — 기능 비교 분석"
+            }
+          },
+          {
+            "id": "954acec2fe8a815b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Bling App 코드 최적화 및 안정성 점검 보고서.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Bling App 코드 최적화 및 안정성 점검 보고서"
+            }
           }
-        ]
+        ],
+        "currentTab": 3
       }
     ],
     "direction": "vertical"
@@ -94,7 +137,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Agentic Team Platform (CTO-driven) - Walkthrough.md",
+                "file": "Bling App 코드 최적화 및 안정성 점검 보고서.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +147,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Agentic Team Platform (CTO-driven) - Walkthrough"
+              "title": "Backlinks for Bling App 코드 최적화 및 안정성 점검 보고서"
             }
           },
           {
@@ -169,8 +212,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -183,12 +225,15 @@
       "bases:Create new base": false
     }
   },
-  "active": "61fd65f82e860efe",
+  "active": "954acec2fe8a815b",
   "lastOpenFiles": [
-    "Untitled.canvas",
-    "GeminiClaw 프로젝트 진행 현황 리뷰.md",
-    "Task.md",
+    "Bling App 코드 최적화 및 안정성 점검 보고서.md",
+    "GeminiClaw Pi Agent vs OpenClaw — 기능 비교 분석.md",
+    "GeminiClaw  AI 기반 회사 운영 OS — 기획문서.md",
     "Welcome.md",
+    "Untitled.canvas",
+    "Task.md",
+    "GeminiClaw 프로젝트 진행 현황 리뷰.md",
     "Agentic Team Platform (CTO-driven) - Walkthrough.md"
   ]
 }

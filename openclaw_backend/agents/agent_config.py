@@ -5,14 +5,17 @@ Falls back to hardcoded prompts if SKILL.md is missing.
 """
 import os
 import re
+import logging
 from dataclasses import dataclass
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
 # Skills 파일 시스템 경로
 # ──────────────────────────────────────────────
-SKILLS_DIR = r"E:\geminiclaw\skills"
+SKILLS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills")
 
 
 # ──────────────────────────────────────────────
@@ -29,10 +32,10 @@ def load_company_context() -> str:
         try:
             with open(company_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            print(f"[Skills] ✅ COMPANY.md 로드됨")
+            logger.info("[Skills] COMPANY.md 로드됨")
             return f"\n[COMPANY CONTEXT - 반드시 참고하세요]\n{content}\n"
         except Exception as e:
-            print(f"[Skills] ⚠️ COMPANY.md 로드 실패: {e}")
+            logger.warning(f"[Skills] COMPANY.md 로드 실패: {e}")
 
     # Fallback: 하드코딩된 기본 컨텍스트
     return _DEFAULT_COMPANY_CONTEXT
@@ -47,10 +50,10 @@ def load_agents_context() -> str:
         try:
             with open(agents_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            print(f"[Skills] ✅ AGENTS.md 로드됨")
+            logger.info("[Skills] AGENTS.md 로드됨")
             return f"\n[TEAM RULES]\n{content}\n"
         except Exception as e:
-            print(f"[Skills] ⚠️ AGENTS.md 로드 실패: {e}")
+            logger.warning(f"[Skills] AGENTS.md 로드 실패: {e}")
     return ""
 
 
@@ -69,14 +72,14 @@ def load_skill(agent_name: str, fallback_prompt: str = "") -> str:
             # YAML frontmatter 제거 (--- ... --- 블록)
             content = re.sub(r"^---\n.*?\n---\n", "", content, flags=re.DOTALL).strip()
 
-            print(f"[Skills] ✅ {agent_name}/SKILL.md 로드됨")
+            logger.info(f"[Skills] {agent_name}/SKILL.md 로드됨")
             return content
         except Exception as e:
-            print(f"[Skills] ⚠️ {agent_name}/SKILL.md 로드 실패: {e}")
+            logger.warning(f"[Skills] {agent_name}/SKILL.md 로드 실패: {e}")
 
     # Fallback: 하드코딩 프롬프트
     if fallback_prompt:
-        print(f"[Skills] ℹ️ {agent_name}: SKILL.md 없음, 기본 프롬프트 사용")
+        logger.info(f"[Skills] {agent_name}: SKILL.md 없음, 기본 프롬프트 사용")
     return fallback_prompt
 
 

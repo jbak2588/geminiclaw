@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     SANDBOX_IMAGE: str = "openclaw_worker_sandbox:latest"
     
     # CORS settings (comma-separated origins, "*" for dev only)
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8080,http://localhost:8080")
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8080,http://localhost:8080,http://localhost:5173,http://127.0.0.1:5173")
 
     # ── Channel settings ──
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

@@ -4,8 +4,7 @@ Dynamic Graph Builder: Creates LangGraph workflow based on team configuration.
 Flow: PM → Agent1 → Reviewer → Agent2 → Reviewer → ... → END
 """
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
+from langgraph.checkpoint.memory import MemorySaver
 import os
 
 from agents.state import AgentState
@@ -13,16 +12,9 @@ from agents.pm_agent import pm_node
 from agents.agent_config import AgentConfig, AVAILABLE_ROLES
 from agents.agent_factory import create_agent_node
 
-# Storage directory for SQLite checkpointer
-STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
-os.makedirs(STORAGE_DIR, exist_ok=True)
-DB_PATH = os.path.join(STORAGE_DIR, "team_state.db")
-
-
 def _get_memory():
-    """Create a new SqliteSaver per call to ensure thread-safety."""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    return SqliteSaver(conn)
+    """Create a MemorySaver for in-process checkpointing."""
+    return MemorySaver()
 
 
 def create_dynamic_graph(team_config: list):

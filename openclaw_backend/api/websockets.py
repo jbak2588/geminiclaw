@@ -338,7 +338,9 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             
             # 칸반 상태 추적용 (세션 내 유지)
             current_kanban_tasks: List[Dict] = []
-            for event in dynamic_graph.stream(initial_state, config={"configurable": {"thread_id": thread_id}}):
+            # 노드 그래프 추적용
+            node_states: Dict[str, str] = {}  # {node_name: status}
+            async for event in dynamic_graph.astream(initial_state, config={"configurable": {"thread_id": thread_id}}):
                 for node_name, state_value in event.items():
                     msg_content = ""
                     if "messages" in state_value and state_value["messages"]:
@@ -371,6 +373,54 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                             }),
                             client_id,
                         )
+
+                    # ─────────────────────────────────────────────
+                    # Node Graph update 이벤트 전송 (Google Opal 스타일)
+                    # ─────────────────────────────────────────────
+                    _SKIP_NODES = {"dispatcher", "retry_manager", "__end__"}
+                    if node_name not in _SKIP_NODES:
+                        # 노드별 상태 매핑
+                        _node_status_map = {
+                            "pm_routed": "completed", "approved": "completed",
+                            "done": "completed", "completed": "completed",
+                            "needs_review": "running", "in_progress": "running",
+                            "error": "error", "awaiting_approval": "pending",
+                        }
+                        graph_node_status = _node_status_map.get(status, "running")
+                        node_states[node_name] = graph_node_status
+
+                        # 팀 순서에서 엣지(연결선) 생성
+                        team_order = [m.get("name") for m in team_config if m.get("name") not in ("pm", "reviewer")]
+                        graph_nodes = []
+                        graph_edges = []
+
+                        # PM 노드
+                        graph_nodes.append({"id": "pm", "label": "CTO", "role": "pm",
+                                            "status": node_states.get("pm", "pending")})
+                        # 에이전트 노드들
+                        for i, agent in enumerate(team_order):
+                            graph_nodes.append({"id": agent, "label": agent.capitalize(),
+                                                "role": agent, "status": node_states.get(agent, "pending")})
+                            if i == 0:
+                                graph_edges.append({"from": "pm", "to": agent})
+                            else:
+                                graph_edges.append({"from": "reviewer", "to": agent})
+                            graph_edges.append({"from": agent, "to": "reviewer"})
+
+                        # Reviewer 노드
+                        graph_nodes.append({"id": "reviewer", "label": "Reviewer", "role": "reviewer",
+                                            "status": node_states.get("reviewer", "pending")})
+
+                        await manager.send_personal_message(
+                            json.dumps({
+                                "type": "node_update",
+                                "nodes": graph_nodes,
+                                "edges": graph_edges,
+                                "active_node": node_name,
+                            }),
+                            client_id,
+                        )
+
 
                     event_payload = {
                         "type": "agent_event",

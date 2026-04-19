@@ -123,12 +123,82 @@ class TelegramBot:
         self._running = False
         logger.info("[Telegram] Bot stopped.")
 
-    async def send_text(self, chat_id: int, text: str) -> None:
-        if not self.app or not self._running:
+    def _record_outbound_audit(
+        self,
+        *,
+        chat_id: int,
+        event_type: str,
+        text: str,
+        delivery_status: str,
+        task_id: str | None = None,
+        approval_id: str | None = None,
+        error_text: str | None = None,
+    ) -> None:
+        from core.in_memory_store import store
+
+        try:
+            store.create_channel_outbound_audit(
+                channel='telegram',
+                recipient=str(chat_id),
+                event_type=event_type,
+                message_preview=text,
+                delivery_status=delivery_status,
+                task_id=task_id,
+                approval_id=approval_id,
+                error_text=error_text,
+            )
+        except Exception as exc:
+            logger.warning("[Telegram] Failed to persist outbound audit: %s", exc)
+
+    async def send_text(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        event_type: str = 'telegram_message',
+        task_id: str | None = None,
+        approval_id: str | None = None,
+    ) -> None:
+        if not text.strip():
             return
+
+        if not self.app or not self._running:
+            self._record_outbound_audit(
+                chat_id=chat_id,
+                event_type=event_type,
+                text=text,
+                delivery_status='failed',
+                task_id=task_id,
+                approval_id=approval_id,
+                error_text='bot_not_running',
+            )
+            return
+
         chunks = [text[i : i + 4000] for i in range(0, len(text), 4000)] or [text]
-        for chunk in chunks:
-            await self.app.bot.send_message(chat_id=chat_id, text=chunk)
+        multi_chunk = len(chunks) > 1
+        for idx, chunk in enumerate(chunks):
+            chunk_event_type = event_type if not multi_chunk else f'{event_type}.chunk{idx + 1}'
+            try:
+                await self.app.bot.send_message(chat_id=chat_id, text=chunk)
+            except Exception as exc:
+                self._record_outbound_audit(
+                    chat_id=chat_id,
+                    event_type=chunk_event_type,
+                    text=chunk,
+                    delivery_status='failed',
+                    task_id=task_id,
+                    approval_id=approval_id,
+                    error_text=str(exc),
+                )
+                raise
+            self._record_outbound_audit(
+                chat_id=chat_id,
+                event_type=chunk_event_type,
+                text=chunk,
+                delivery_status='sent',
+                task_id=task_id,
+                approval_id=approval_id,
+            )
 
     async def notify_task_event(self, task: dict[str, Any], node: str, status: str, message: str) -> None:
         chat_id = _chat_id_from_source(task.get("source"))
@@ -144,7 +214,12 @@ class TelegramBot:
             f"- Status: {status}\n"
             f"- Message: {message}"
         )
-        await self.send_text(chat_id, text)
+        await self.send_text(
+            chat_id,
+            text,
+            event_type=f'task_update.{status}',
+            task_id=task['id'],
+        )
 
     async def notify_approval_request(self, task: dict[str, Any], approval: dict[str, Any]) -> None:
         chat_id = _chat_id_from_source(task.get("source"))
@@ -157,7 +232,13 @@ class TelegramBot:
             f"- Approval ID: {approval['approval_id']}\n"
             f"- Action: approve/reject in Approval Center (desktop UI)"
         )
-        await self.send_text(chat_id, text)
+        await self.send_text(
+            chat_id,
+            text,
+            event_type='approval_request',
+            task_id=task['id'],
+            approval_id=approval['approval_id'],
+        )
 
     async def notify_approval_resolved(self, approval: dict[str, Any]) -> None:
         from core.in_memory_store import store
@@ -174,65 +255,88 @@ class TelegramBot:
             f"- Approval ID: {approval['approval_id']}\n"
             f"- Decision: {approval['status']}"
         )
-        await self.send_text(chat_id, text)
+        await self.send_text(
+            chat_id,
+            text,
+            event_type='approval_resolved',
+            task_id=task['id'],
+            approval_id=approval['approval_id'],
+        )
 
     async def _handle_start(self, update, context) -> None:
-        await update.message.reply_text(
+        if not update.effective_chat:
+            return
+        await self.send_text(
+            update.effective_chat.id,
             "GeminiClaw Telegram channel is active.\n"
             "Send any text to create a task.\n"
             "Commands:\n"
-            "/status <task_id> - check task status"
+            "/status <task_id> - check task status",
+            event_type='command.start',
         )
 
     async def _handle_status(self, update, context) -> None:
         from core.in_memory_store import store
 
+        if not update.effective_chat:
+            return
+        chat_id = update.effective_chat.id
+
         if not context.args:
-            await update.message.reply_text("Usage: /status <task_id>")
+            await self.send_text(chat_id, "Usage: /status <task_id>", event_type='command.status.usage')
             return
 
         task_id = context.args[0].strip()
         task = store.tasks.get(task_id)
         if not task:
-            await update.message.reply_text("Task not found.")
+            await self.send_text(chat_id, "Task not found.", event_type='command.status.not_found')
             return
 
-        chat_id = update.effective_chat.id
         expected_source = f"telegram:{chat_id}"
         if task.get("source") != expected_source:
-            await update.message.reply_text("Task not found.")
+            await self.send_text(chat_id, "Task not found.", event_type='command.status.not_found')
             return
 
-        await update.message.reply_text(
+        await self.send_text(
+            chat_id,
             f"Task status\n"
             f"- Task ID: {task['id']}\n"
             f"- Title: {task['title']}\n"
             f"- Status: {task['status']}\n"
-            f"- Latest node: {task.get('latest_node') or '-'}"
+            f"- Latest node: {task.get('latest_node') or '-'}",
+            event_type='command.status.result',
+            task_id=task['id'],
         )
 
     async def _handle_message(self, update, context) -> None:
         if not update.message or not update.message.text:
             return
+        if not update.effective_chat:
+            return
 
         text = update.message.text.strip()
         if not text:
-            await update.message.reply_text("Please send a non-empty message.")
+            await self.send_text(update.effective_chat.id, "Please send a non-empty message.", event_type='task_create.invalid_text')
             return
 
         chat_id = update.effective_chat.id
-        sender_name = update.effective_user.username or update.effective_user.full_name or str(chat_id)
+        sender_name = str(chat_id)
+        if update.effective_user:
+            sender_name = update.effective_user.username or update.effective_user.full_name or str(chat_id)
         try:
             task = await process_inbound_telegram_text(chat_id=chat_id, sender_name=sender_name, text=text)
         except RuntimeError as exc:
-            await update.message.reply_text(str(exc))
+            await self.send_text(chat_id, str(exc), event_type='task_create.error')
             return
 
-        await update.message.reply_text(
+        await self.send_text(
+            chat_id,
             f"Task created.\n"
             f"- Task ID: {task['id']}\n"
             f"- Title: {task['title']}\n"
-            f"Status updates will be sent here."
+            f"Status updates will be sent here.",
+            event_type='task_create.accepted',
+            task_id=task['id'],
         )
 
 

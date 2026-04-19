@@ -21,6 +21,7 @@ class InMemoryStore:
         self.tasks: dict[str, dict[str, Any]] = {}
         self.approvals: dict[str, dict[str, Any]] = {}
         self.channels: list[dict[str, Any]] = []
+        self.channel_outbound_audits: list[dict[str, Any]] = []
         self.knowledge_docs: list[dict[str, Any]] = []
         self.log_buffers: dict[str, list[str]] = {}
         self.pending_gates: dict[str, asyncio.Event] = {}
@@ -91,6 +92,20 @@ class InMemoryStore:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS channel_outbound_audits (
+                    id TEXT PRIMARY KEY,
+                    channel TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    task_id TEXT,
+                    approval_id TEXT,
+                    event_type TEXT NOT NULL,
+                    message_preview TEXT NOT NULL,
+                    sent_at TEXT NOT NULL,
+                    delivery_status TEXT NOT NULL,
+                    error_text TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS knowledge_docs (
                     id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -103,6 +118,7 @@ class InMemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
                 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
                 CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON approvals(task_id);
+                CREATE INDEX IF NOT EXISTS idx_channel_outbound_sent_at ON channel_outbound_audits(sent_at);
                 """
             )
             self._conn.commit()
@@ -196,6 +212,32 @@ class InMemoryStore:
                         'created_at': row['created_at'],
                     }
                 )
+
+            self.channel_outbound_audits = []
+            for row in self._conn.execute(
+                """
+                SELECT id, channel, direction, recipient, task_id, approval_id, event_type, message_preview, sent_at, delivery_status, error_text
+                FROM channel_outbound_audits
+                ORDER BY sent_at DESC
+                """
+            ).fetchall():
+                item = {
+                    'id': row['id'],
+                    'channel': row['channel'],
+                    'direction': row['direction'],
+                    'recipient': row['recipient'],
+                    'event_type': row['event_type'],
+                    'message_preview': row['message_preview'],
+                    'sent_at': row['sent_at'],
+                    'delivery_status': row['delivery_status'],
+                }
+                if row['task_id'] is not None:
+                    item['task_id'] = row['task_id']
+                if row['approval_id'] is not None:
+                    item['approval_id'] = row['approval_id']
+                if row['error_text'] is not None:
+                    item['error_text'] = row['error_text']
+                self.channel_outbound_audits.append(item)
 
             self.knowledge_docs = []
             for row in self._conn.execute(
@@ -501,6 +543,68 @@ class InMemoryStore:
 
     def list_channel_messages(self) -> list[dict[str, Any]]:
         return self.channels[:100]
+
+    def create_channel_outbound_audit(
+        self,
+        channel: str,
+        recipient: str,
+        event_type: str,
+        message_preview: str,
+        delivery_status: str,
+        direction: str = 'outbound',
+        task_id: str | None = None,
+        approval_id: str | None = None,
+        error_text: str | None = None,
+    ) -> dict[str, Any]:
+        preview = message_preview.replace('\r', ' ').strip()
+        if len(preview) > 500:
+            preview = preview[:497] + '...'
+
+        item = {
+            'id': str(uuid.uuid4()),
+            'channel': channel,
+            'direction': direction,
+            'recipient': recipient,
+            'event_type': event_type,
+            'message_preview': preview,
+            'sent_at': self.now(),
+            'delivery_status': delivery_status,
+        }
+        if task_id:
+            item['task_id'] = task_id
+        if approval_id:
+            item['approval_id'] = approval_id
+        if error_text:
+            item['error_text'] = error_text[:500]
+
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO channel_outbound_audits (
+                    id, channel, direction, recipient, task_id, approval_id, event_type, message_preview, sent_at, delivery_status, error_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item['id'],
+                    item['channel'],
+                    item['direction'],
+                    item['recipient'],
+                    item.get('task_id'),
+                    item.get('approval_id'),
+                    item['event_type'],
+                    item['message_preview'],
+                    item['sent_at'],
+                    item['delivery_status'],
+                    item.get('error_text'),
+                ),
+            )
+            self._conn.commit()
+        self.channel_outbound_audits.insert(0, item)
+        return item
+
+    def list_channel_outbound_audits(self, limit: int = 100) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(limit, 500))
+        return self.channel_outbound_audits[:safe_limit]
 
     def create_knowledge_doc(self, project_id: str, title: str, filename: str, summary: str) -> dict[str, Any]:
         item = {

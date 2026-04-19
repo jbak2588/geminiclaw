@@ -36,4 +36,6 @@ async def decide_approval(approval_id: str, payload: ApprovalDecision):
     )
     from channels.telegram_bot import notify_telegram_approval_resolved
     await notify_telegram_approval_resolved(approval)
+    from api.websockets import resume_task_from_approval_resolution
+    await resume_task_from_approval_resolution(approval)
     return approval

@@ -39,6 +39,7 @@ class Broadcaster:
 
 
 broadcaster = Broadcaster()
+active_workflow_tasks: set[str] = set()
 
 
 def build_nodes(task: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -98,6 +99,55 @@ async def push_event(task: dict[str, Any], node: str, status: str, message: str)
     await notify_telegram_task_event(task=task, node=node, status=status, message=message)
 
 
+def is_workflow_active(task_id: str) -> bool:
+    return task_id in active_workflow_tasks
+
+
+async def resume_task_from_approval_resolution(approval: dict[str, Any]) -> bool:
+    """
+    Recovery fallback:
+    if backend restarted while waiting on approval, there may be no live workflow coroutine.
+    In that case, continue/finish the reviewer step from the approval decision.
+    """
+    task_id = approval.get('task_id')
+    if not task_id:
+        return False
+    if is_workflow_active(task_id):
+        return False
+
+    task = store.tasks.get(task_id)
+    if not task:
+        return False
+    if task.get('status') in {'completed', 'rejected'}:
+        return False
+
+    node = approval.get('node') or task.get('latest_node') or 'reviewer'
+    decision_status = approval.get('status')
+    if decision_status == 'rejected':
+        await push_event(task, node, 'rejected', 'Workflow stopped because approval was rejected.')
+        store.update_task(task_id, status='rejected', latest_node=node)
+        return True
+
+    if decision_status == 'approved':
+        await push_event(task, node, 'approved', 'Approval received. Resuming workflow.')
+        await asyncio.sleep(1)
+        await push_event(task, node, 'completed', f'{str(node).capitalize()} node completed.')
+        store.update_task(task_id, status='completed', latest_node=node)
+        await broadcaster.broadcast_json(
+            {
+                'type': 'task_event',
+                'task_id': task_id,
+                'task_title': task['title'],
+                'node': 'system',
+                'status': 'completed',
+                'message': 'Workflow Completed.',
+            }
+        )
+        return True
+
+    return False
+
+
 def _needs_approval(task: dict[str, Any]) -> bool:
     prompt = task['instruction'].lower()
     keywords = ['deploy', 'publish', 'payment', 'delete', 'send outside', 'contract', 'approval']
@@ -105,82 +155,88 @@ def _needs_approval(task: dict[str, Any]) -> bool:
 
 
 async def run_task_workflow(task_id: str) -> None:
-    task = store.get_task(task_id)
-    nodes, edges = build_nodes(task)
-    node_index = {node['id']: i for i, node in enumerate(nodes)}
+    if is_workflow_active(task_id):
+        return
+    active_workflow_tasks.add(task_id)
+    try:
+        task = store.get_task(task_id)
+        nodes, edges = build_nodes(task)
+        node_index = {node['id']: i for i, node in enumerate(nodes)}
 
-    async def mark_node(node_name: str, status: str) -> None:
-        if node_name in node_index:
-            nodes[node_index[node_name]]['status'] = status
-        await push_graph(task, nodes, edges, node_name)
+        async def mark_node(node_name: str, status: str) -> None:
+            if node_name in node_index:
+                nodes[node_index[node_name]]['status'] = status
+            await push_graph(task, nodes, edges, node_name)
 
-    team = store.get_team(task.get('team_id'))
-    sequence = [item['name'] for item in (team or {}).get('config', [])] or ['control', 'pm', 'planning', 'reviewer']
+        team = store.get_team(task.get('team_id'))
+        sequence = [item['name'] for item in (team or {}).get('config', [])] or ['control', 'pm', 'planning', 'reviewer']
 
-    await mark_node(sequence[0], 'running')
-    await push_event(task, sequence[0], 'running', 'Task received and interpreted by control agent.')
-    await asyncio.sleep(1)
-
-    for idx, node in enumerate(sequence):
-        await mark_node(node, 'running')
-        if node == 'control':
-            await push_event(task, node, 'running', 'Routing task to the correct department team.')
-        elif node == 'pm':
-            await push_event(task, node, 'running', 'Breaking instruction into structured work steps.')
-        elif node == 'planning':
-            await push_event(task, node, 'running', 'Preparing planning document and execution approach.')
-        elif node == 'developer':
-            await push_event(task, node, 'running', 'Producing implementation or technical execution output.')
-        elif node == 'marketing':
-            await push_event(task, node, 'running', 'Drafting campaign, copy, and delivery assets.')
-        elif node == 'operations':
-            await push_event(task, node, 'running', 'Checking channel, field, and operational follow-up items.')
-        elif node == 'reviewer':
-            await push_event(task, node, 'running', 'Reviewing output quality and risk before release.')
-        else:
-            await push_event(task, node, 'running', f'Processing node: {node}')
+        await mark_node(sequence[0], 'running')
+        await push_event(task, sequence[0], 'running', 'Task received and interpreted by control agent.')
         await asyncio.sleep(1)
 
-        requires_final_approval = node == 'reviewer' and _needs_approval(task)
-        if requires_final_approval:
-            approval = store.create_approval(
-                task_id=task['id'],
-                task_title=task['title'],
-                node=node,
-                title='Final human approval required',
-                message='This task includes a risky or external action. Please approve or reject.',
-            )
-            await broadcaster.broadcast_json({**approval, 'type': 'approval_request'})
-            from channels.telegram_bot import notify_telegram_approval_request
-            await notify_telegram_approval_request(task=task, approval=approval)
-            await mark_node(node, 'pending')
-            decision = await store.wait_for_approval(approval['approval_id'])
-            if decision['status'] == 'rejected':
-                await mark_node(node, 'error')
-                await push_event(task, node, 'rejected', 'Workflow stopped because approval was rejected.')
-                store.update_task(task['id'], status='rejected')
-                return
+        for idx, node in enumerate(sequence):
             await mark_node(node, 'running')
-            await push_event(task, node, 'approved', 'Approval received. Resuming workflow.')
+            if node == 'control':
+                await push_event(task, node, 'running', 'Routing task to the correct department team.')
+            elif node == 'pm':
+                await push_event(task, node, 'running', 'Breaking instruction into structured work steps.')
+            elif node == 'planning':
+                await push_event(task, node, 'running', 'Preparing planning document and execution approach.')
+            elif node == 'developer':
+                await push_event(task, node, 'running', 'Producing implementation or technical execution output.')
+            elif node == 'marketing':
+                await push_event(task, node, 'running', 'Drafting campaign, copy, and delivery assets.')
+            elif node == 'operations':
+                await push_event(task, node, 'running', 'Checking channel, field, and operational follow-up items.')
+            elif node == 'reviewer':
+                await push_event(task, node, 'running', 'Reviewing output quality and risk before release.')
+            else:
+                await push_event(task, node, 'running', f'Processing node: {node}')
             await asyncio.sleep(1)
 
-        await mark_node(node, 'completed')
-        await push_event(task, node, 'completed', f'{node.capitalize()} node completed.')
+            requires_final_approval = node == 'reviewer' and _needs_approval(task)
+            if requires_final_approval:
+                approval = store.create_approval(
+                    task_id=task['id'],
+                    task_title=task['title'],
+                    node=node,
+                    title='Final human approval required',
+                    message='This task includes a risky or external action. Please approve or reject.',
+                )
+                await broadcaster.broadcast_json({**approval, 'type': 'approval_request'})
+                from channels.telegram_bot import notify_telegram_approval_request
+                await notify_telegram_approval_request(task=task, approval=approval)
+                await mark_node(node, 'pending')
+                decision = await store.wait_for_approval(approval['approval_id'])
+                if decision['status'] == 'rejected':
+                    await mark_node(node, 'error')
+                    await push_event(task, node, 'rejected', 'Workflow stopped because approval was rejected.')
+                    store.update_task(task['id'], status='rejected')
+                    return
+                await mark_node(node, 'running')
+                await push_event(task, node, 'approved', 'Approval received. Resuming workflow.')
+                await asyncio.sleep(1)
 
-        if idx + 1 < len(sequence):
-            await mark_node(sequence[idx + 1], 'pending')
+            await mark_node(node, 'completed')
+            await push_event(task, node, 'completed', f'{node.capitalize()} node completed.')
 
-    store.update_task(task['id'], status='completed', latest_node=sequence[-1])
-    await broadcaster.broadcast_json(
-        {
-            'type': 'task_event',
-            'task_id': task['id'],
-            'task_title': task['title'],
-            'node': 'system',
-            'status': 'completed',
-            'message': 'Workflow Completed.',
-        }
-    )
+            if idx + 1 < len(sequence):
+                await mark_node(sequence[idx + 1], 'pending')
+
+        store.update_task(task['id'], status='completed', latest_node=sequence[-1])
+        await broadcaster.broadcast_json(
+            {
+                'type': 'task_event',
+                'task_id': task['id'],
+                'task_title': task['title'],
+                'node': 'system',
+                'status': 'completed',
+                'message': 'Workflow Completed.',
+            }
+        )
+    finally:
+        active_workflow_tasks.discard(task_id)
 
 
 @router.websocket('/ws/{client_id}')

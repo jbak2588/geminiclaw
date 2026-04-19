@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from core.in_memory_store import store
 from schemas.common import ChannelMessageCreate
@@ -13,6 +13,11 @@ router = APIRouter()
 @router.get('/messages')
 def list_messages():
     return {'messages': store.list_channel_messages()}
+
+
+@router.get('/outbound-audit')
+def list_outbound_audit(limit: int = Query(default=100, ge=1, le=500)):
+    return {'messages': store.list_channel_outbound_audits(limit=limit)}
 
 
 @router.post('/messages')

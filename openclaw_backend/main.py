@@ -16,23 +16,56 @@ from api.knowledge import router as knowledge_router
 from api.websockets import router as ws_router
 from channels.telegram_bot import get_telegram_bot
 
+
+def _configure_console_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
+        )
+    else:
+        root_logger.setLevel(logging.INFO)
+    # Prevent sensitive URL components (e.g., bot token in request URL) from appearing in logs.
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
+
+
+_configure_console_logging()
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info(
+        '[Startup] Booting backend env=%s provider=%s',
+        settings.app_env,
+        settings.ai_provider,
+    )
+    logger.info(
+        '[Startup] Paths state_db=%s storage=%s logs=%s',
+        settings.state_db_path,
+        settings.storage_dir,
+        settings.log_dir,
+    )
     telegram_bot = get_telegram_bot()
     if telegram_bot:
         try:
+            logger.info('[Startup] Starting Telegram polling bot...')
             await telegram_bot.start()
+            logger.info('[Startup] Telegram polling bot started.')
         except Exception as exc:
             logger.warning("[Telegram] Bot failed to start: %s", exc)
+    else:
+        logger.info('[Startup] Telegram bot disabled (TELEGRAM_BOT_TOKEN not set).')
     yield
+    logger.info('[Shutdown] Stopping backend services...')
     if telegram_bot:
         try:
             await telegram_bot.stop()
         except Exception as exc:
             logger.warning("[Telegram] Bot failed to stop cleanly: %s", exc)
+    logger.info('[Shutdown] Backend shutdown complete.')
 
 
 app = FastAPI(
@@ -77,4 +110,5 @@ def health_check():
 if __name__ == '__main__':
     import uvicorn
 
+    logger.info('[Startup] Launching uvicorn host=0.0.0.0 port=8001 reload=true')
     uvicorn.run('openclaw_backend.main:app', host='0.0.0.0', port=8001, reload=True)

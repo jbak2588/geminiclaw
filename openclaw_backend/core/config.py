@@ -1,41 +1,65 @@
-from pydantic_settings import BaseSettings
+from __future__ import annotations
+
 import os
-import re
-from dotenv import load_dotenv
+from dataclasses import dataclass
+from pathlib import Path
 
-# Ensure we override existing environment variables if .env changes
-load_dotenv(override=True)
 
-class Settings(BaseSettings):
-    PROJECT_NAME: str = "Agentic Team Orchestrator"
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    
-    # Sandbox settings
-    USE_DOCKER_SANDBOX: bool = True
-    SANDBOX_IMAGE: str = "openclaw_worker_sandbox:latest"
-    
-    # CORS settings (comma-separated origins, "*" for dev only)
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8080,http://localhost:8080,http://localhost:5173,http://127.0.0.1:5173")
+@dataclass
+class Settings:
+    app_env: str = os.getenv('APP_ENV', 'development')
+    ai_provider: str = os.getenv('AI_PROVIDER', 'gemini')
+    gemini_api_key: str = os.getenv('GEMINI_API_KEY', '')
+    openai_api_key: str = os.getenv('OPENAI_API_KEY', '')
+    log_dir: str = os.getenv('LOG_DIR', str(Path(__file__).resolve().parents[1] / 'logs'))
+    storage_dir: str = os.getenv('STORAGE_DIR', str(Path(__file__).resolve().parents[1] / 'storage'))
+    allowed_origins_raw: str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8000,http://localhost:8001')
+    use_docker_sandbox: bool = os.getenv('USE_DOCKER_SANDBOX', 'false').lower() in {'1', 'true', 'yes', 'on'}
+    whatsapp_verify_token: str = os.getenv('WHATSAPP_VERIFY_TOKEN', '')
+    whatsapp_token: str = os.getenv('WHATSAPP_TOKEN', '')
+    whatsapp_phone_number_id: str = os.getenv('WHATSAPP_PHONE_NUMBER_ID', '')
+    telegram_bot_token: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
 
-    # ── Channel settings ──
-    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    WHATSAPP_TOKEN: str = os.getenv("WHATSAPP_TOKEN", "")
-    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
-    WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", "geminiclaw_verify")
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [item.strip() for item in self.allowed_origins_raw.split(',') if item.strip()]
+
+    @property
+    def GEMINI_API_KEY(self) -> str:
+        return self.gemini_api_key
+
+    @property
+    def OPENAI_API_KEY(self) -> str:
+        return self.openai_api_key
+
+    @property
+    def USE_DOCKER_SANDBOX(self) -> bool:
+        return self.use_docker_sandbox
+
+    @property
+    def WHATSAPP_VERIFY_TOKEN(self) -> str:
+        return self.whatsapp_verify_token
+
+    @property
+    def WHATSAPP_TOKEN(self) -> str:
+        return self.whatsapp_token
+
+    @property
+    def WHATSAPP_PHONE_NUMBER_ID(self) -> str:
+        return self.whatsapp_phone_number_id
+
+    @property
+    def TELEGRAM_BOT_TOKEN(self) -> str:
+        return self.telegram_bot_token
+
 
 settings = Settings()
+Path(settings.log_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.storage_dir).mkdir(parents=True, exist_ok=True)
 
-# ──────────────────────────────────────────────
-# Security utilities
-# ──────────────────────────────────────────────
-_SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
 
-def sanitize_project_id(project_id: str) -> str:
-    """Validate and sanitize project_id to prevent path traversal.
-    Only allows alphanumeric characters, hyphens, and underscores.
-    Returns 'default' if invalid.
-    """
-    if not project_id or not _SAFE_ID_PATTERN.match(project_id):
-        return "default"
-    return project_id
-
+def sanitize_project_id(project_id: str | None) -> str:
+    if not project_id:
+        return 'default'
+    sanitized = ''.join(ch if ch.isalnum() or ch in {'-', '_'} else '_' for ch in project_id.strip())
+    return sanitized or 'default'

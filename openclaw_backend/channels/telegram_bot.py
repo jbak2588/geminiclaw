@@ -34,6 +34,13 @@ def _chat_id_from_source(source: str | None) -> int | None:
         return None
 
 
+def _normalize_username(username: str | None) -> str:
+    value = (username or '').strip().lower()
+    if value.startswith('@'):
+        value = value[1:]
+    return value
+
+
 async def process_inbound_telegram_text(chat_id: int, sender_name: str, text: str) -> dict[str, Any]:
     """Create channel + task records for a Telegram inbound message and start workflow."""
     from core.in_memory_store import store
@@ -102,6 +109,8 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("start", self._handle_start))
         self.app.add_handler(CommandHandler("help", self._handle_start))
         self.app.add_handler(CommandHandler("status", self._handle_status))
+        self.app.add_handler(CommandHandler("approve", self._handle_approve))
+        self.app.add_handler(CommandHandler("reject", self._handle_reject))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         await self.app.initialize()
@@ -271,7 +280,9 @@ class TelegramBot:
             "GeminiClaw Telegram channel is active.\n"
             "Send any text to create a task.\n"
             "Commands:\n"
-            "/status <task_id> - check task status",
+            "/status <task_id> - check task status\n"
+            "/approve <approval_id> - approve pending approval (authorized operators only)\n"
+            "/reject <approval_id> [comment] - reject pending approval (authorized operators only)",
             event_type='command.start',
         )
 
@@ -307,6 +318,122 @@ class TelegramBot:
             event_type='command.status.result',
             task_id=task['id'],
         )
+
+    def _is_operator_authorized(self, chat_id: int, user_id: int | None, username: str | None) -> bool:
+        from core.config import settings
+
+        allowed_chat_ids = settings.TELEGRAM_OPERATOR_CHAT_IDS
+        allowed_usernames = settings.TELEGRAM_OPERATOR_USERNAMES
+        if not allowed_chat_ids and not allowed_usernames:
+            return False
+
+        identities = {str(chat_id)}
+        if user_id is not None:
+            identities.add(str(user_id))
+        if identities & allowed_chat_ids:
+            return True
+
+        normalized_username = _normalize_username(username)
+        if normalized_username and normalized_username in allowed_usernames:
+            return True
+        return False
+
+    def _build_operator_actor(self, chat_id: int, user_id: int | None, username: str | None) -> str:
+        normalized_username = _normalize_username(username)
+        if normalized_username:
+            return f'telegram:{normalized_username}'
+        if user_id is not None:
+            return f'telegram_user_id:{user_id}'
+        return f'telegram_chat:{chat_id}'
+
+    async def _handle_approval_command(self, update, context, decision: str) -> None:
+        if not update.effective_chat:
+            return
+
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id if update.effective_user else None
+        username = update.effective_user.username if update.effective_user else None
+        command_name = 'approve' if decision == 'approved' else 'reject'
+        event_prefix = f'command.{command_name}'
+
+        if not context.args:
+            usage = '/approve <approval_id>' if command_name == 'approve' else '/reject <approval_id> [comment]'
+            await self.send_text(chat_id, f'Usage: {usage}', event_type=f'{event_prefix}.usage')
+            return
+
+        approval_id = context.args[0].strip()
+        if not approval_id:
+            usage = '/approve <approval_id>' if command_name == 'approve' else '/reject <approval_id> [comment]'
+            await self.send_text(chat_id, f'Usage: {usage}', event_type=f'{event_prefix}.usage')
+            return
+
+        comment = ' '.join(context.args[1:]).strip()
+        if not self._is_operator_authorized(chat_id=chat_id, user_id=user_id, username=username):
+            await self.send_text(
+                chat_id,
+                'Unauthorized command. Your Telegram identity is not allowed to approve or reject.',
+                event_type=f'{event_prefix}.unauthorized',
+                approval_id=approval_id,
+            )
+            return
+
+        actor = self._build_operator_actor(chat_id=chat_id, user_id=user_id, username=username)
+        try:
+            from api.approvals import apply_approval_decision
+
+            approval, changed = await apply_approval_decision(
+                approval_id=approval_id,
+                decision=decision,
+                actor=actor,
+                comment=comment,
+            )
+        except KeyError:
+            await self.send_text(
+                chat_id,
+                'Approval not found.',
+                event_type=f'{event_prefix}.not_found',
+                approval_id=approval_id,
+            )
+            return
+        except Exception as exc:
+            logger.warning('[Telegram] /%s command failed for approval %s: %s', command_name, approval_id, exc)
+            await self.send_text(
+                chat_id,
+                'Approval command failed. Please retry or use Approval Center.',
+                event_type=f'{event_prefix}.error',
+                approval_id=approval_id,
+            )
+            return
+
+        task_id = approval.get('task_id')
+        if not changed:
+            await self.send_text(
+                chat_id,
+                f"Approval already resolved.\n"
+                f"- Approval ID: {approval_id}\n"
+                f"- Current status: {approval.get('status')}",
+                event_type=f'{event_prefix}.already_resolved',
+                task_id=task_id,
+                approval_id=approval_id,
+            )
+            return
+
+        await self.send_text(
+            chat_id,
+            f"Approval updated.\n"
+            f"- Approval ID: {approval_id}\n"
+            f"- Decision: {approval.get('status')}\n"
+            f"- Task ID: {task_id}",
+            event_type=f'{event_prefix}.success',
+            task_id=task_id,
+            approval_id=approval_id,
+        )
+
+    async def _handle_approve(self, update, context) -> None:
+        await self._handle_approval_command(update, context, decision='approved')
+
+    async def _handle_reject(self, update, context) -> None:
+        await self._handle_approval_command(update, context, decision='rejected')
 
     async def _handle_message(self, update, context) -> None:
         if not update.message or not update.message.text:

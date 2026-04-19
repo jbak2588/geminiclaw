@@ -24,6 +24,8 @@ class Settings:
     whatsapp_token: str = os.getenv('WHATSAPP_TOKEN', '')
     whatsapp_phone_number_id: str = os.getenv('WHATSAPP_PHONE_NUMBER_ID', '')
     telegram_bot_token: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    telegram_operator_chat_ids_raw: str = os.getenv('TELEGRAM_OPERATOR_CHAT_IDS', '')
+    telegram_operator_usernames_raw: str = os.getenv('TELEGRAM_OPERATOR_USERNAMES', '')
 
     @property
     def allowed_origins(self) -> list[str]:
@@ -56,6 +58,33 @@ class Settings:
     @property
     def TELEGRAM_BOT_TOKEN(self) -> str:
         return self.telegram_bot_token
+
+    @property
+    def telegram_operator_chat_ids(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.telegram_operator_chat_ids_raw.split(',')
+            if item.strip()
+        }
+
+    @property
+    def telegram_operator_usernames(self) -> set[str]:
+        values: set[str] = set()
+        for item in self.telegram_operator_usernames_raw.split(','):
+            normalized = item.strip().lower()
+            if normalized.startswith('@'):
+                normalized = normalized[1:]
+            if normalized:
+                values.add(normalized)
+        return values
+
+    @property
+    def TELEGRAM_OPERATOR_CHAT_IDS(self) -> set[str]:
+        return self.telegram_operator_chat_ids
+
+    @property
+    def TELEGRAM_OPERATOR_USERNAMES(self) -> set[str]:
+        return self.telegram_operator_usernames
 
 
 settings = Settings()

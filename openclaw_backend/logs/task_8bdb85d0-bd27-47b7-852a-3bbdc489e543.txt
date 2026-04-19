@@ -1,0 +1,15 @@
+[2026-04-19T13:00:07.419857] Task created: Telegram: Local telegram channel flow smoke test publish approval
+[2026-04-19T13:00:07.422858] [control] running: Task received and interpreted by control agent.
+[2026-04-19T13:00:08.444159] [control] running: Routing task to the correct department team.
+[2026-04-19T13:00:09.454003] [control] completed: Control node completed.
+[2026-04-19T13:00:09.458024] [pm] running: Breaking instruction into structured work steps.
+[2026-04-19T13:00:10.475496] [pm] completed: Pm node completed.
+[2026-04-19T13:00:10.481014] [planning] running: Preparing planning document and execution approach.
+[2026-04-19T13:00:11.496207] [planning] completed: Planning node completed.
+[2026-04-19T13:00:11.499566] [developer] running: Producing implementation or technical execution output.
+[2026-04-19T13:00:12.509914] [developer] completed: Developer node completed.
+[2026-04-19T13:00:12.513914] [reviewer] running: Reviewing output quality and risk before release.
+[2026-04-19T13:00:13.537029] Approval requested: Final human approval required
+[2026-04-19T13:00:13.595748] Approval approved by local_tester
+[2026-04-19T13:00:13.599934] [reviewer] approved: Approval received. Resuming workflow.
+[2026-04-19T13:00:14.618928] [reviewer] completed: Reviewer node completed.

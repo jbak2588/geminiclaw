@@ -1,0 +1,14 @@
+[2026-04-19T14:57:02.766859] Task created: RestartRecoveryReject 20260419215702 publish approval
+[2026-04-19T14:57:02.770857] [control] running: Task received and interpreted by control agent.
+[2026-04-19T14:57:03.790739] [control] running: Routing task to the correct department team.
+[2026-04-19T14:57:04.811792] [control] completed: Control node completed.
+[2026-04-19T14:57:04.815792] [pm] running: Breaking instruction into structured work steps.
+[2026-04-19T14:57:05.832702] [pm] completed: Pm node completed.
+[2026-04-19T14:57:05.836769] [planning] running: Preparing planning document and execution approach.
+[2026-04-19T14:57:06.851744] [planning] completed: Planning node completed.
+[2026-04-19T14:57:06.854746] [developer] running: Producing implementation or technical execution output.
+[2026-04-19T14:57:07.886008] [developer] completed: Developer node completed.
+[2026-04-19T14:57:07.890013] [reviewer] running: Reviewing output quality and risk before release.
+[2026-04-19T14:57:08.914271] Approval requested: Final human approval required
+[2026-04-19T14:57:45.562971] Approval rejected by restart_recovery_tester
+[2026-04-19T14:57:45.566110] [reviewer] rejected: Workflow stopped because approval was rejected.

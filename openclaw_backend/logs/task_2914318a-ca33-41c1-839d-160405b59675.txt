@@ -1,0 +1,4 @@
+[2026-04-19T15:13:17.646518] Task created: Telegram direct reject deterministic
+[2026-04-19T15:13:17.654523] Approval requested: Final human approval required
+[2026-04-19T15:13:17.658853] Approval rejected by telegram:op_admin
+[2026-04-19T15:13:17.661854] [reviewer] rejected: Workflow stopped because approval was rejected.

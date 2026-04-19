@@ -1,0 +1,15 @@
+[2026-04-19T14:56:16.840644] Task created: RestartRecoveryApprove 20260419215616 publish approval
+[2026-04-19T14:56:16.845645] [control] running: Task received and interpreted by control agent.
+[2026-04-19T14:56:17.831382] [control] running: Routing task to the correct department team.
+[2026-04-19T14:56:18.851108] [control] completed: Control node completed.
+[2026-04-19T14:56:18.855108] [pm] running: Breaking instruction into structured work steps.
+[2026-04-19T14:56:19.890012] [pm] completed: Pm node completed.
+[2026-04-19T14:56:19.894010] [planning] running: Preparing planning document and execution approach.
+[2026-04-19T14:56:20.894831] [planning] completed: Planning node completed.
+[2026-04-19T14:56:20.898339] [developer] running: Producing implementation or technical execution output.
+[2026-04-19T14:56:21.913317] [developer] completed: Developer node completed.
+[2026-04-19T14:56:21.917317] [reviewer] running: Reviewing output quality and risk before release.
+[2026-04-19T14:56:22.935192] Approval requested: Final human approval required
+[2026-04-19T14:56:50.033163] Approval approved by restart_recovery_tester
+[2026-04-19T14:56:50.036668] [reviewer] approved: Approval received. Resuming workflow.
+[2026-04-19T14:56:51.039398] [reviewer] completed: Reviewer node completed.

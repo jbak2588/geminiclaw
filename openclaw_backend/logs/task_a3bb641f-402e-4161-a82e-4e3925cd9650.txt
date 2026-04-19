@@ -1,0 +1,14 @@
+[2026-04-19T15:39:56.174023] Task created: LiveOperatorReject 20260419223956 publish approval
+[2026-04-19T15:39:56.179022] [control] running: Task received and interpreted by control agent.
+[2026-04-19T15:39:57.187538] [control] running: Routing task to the correct department team.
+[2026-04-19T15:39:58.209425] [control] completed: Control node completed.
+[2026-04-19T15:39:58.945172] [pm] running: Breaking instruction into structured work steps.
+[2026-04-19T15:39:59.950971] [pm] completed: Pm node completed.
+[2026-04-19T15:40:00.316106] [planning] running: Preparing planning document and execution approach.
+[2026-04-19T15:40:01.323549] [planning] completed: Planning node completed.
+[2026-04-19T15:40:01.730103] [developer] running: Producing implementation or technical execution output.
+[2026-04-19T15:40:02.762486] [developer] completed: Developer node completed.
+[2026-04-19T15:40:03.207717] [reviewer] running: Reviewing output quality and risk before release.
+[2026-04-19T15:40:04.231297] Approval requested: Final human approval required
+[2026-04-19T15:41:56.354811] Approval rejected by telegram_user_id:5290546807
+[2026-04-19T15:41:56.358829] [reviewer] rejected: Workflow stopped because approval was rejected.

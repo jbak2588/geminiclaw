@@ -1,0 +1,14 @@
+[2026-04-19T12:37:15.356409] Task created: Approval Reject 1776602233138 publish approval
+[2026-04-19T12:37:15.360410] [control] running: Task received and interpreted by control agent.
+[2026-04-19T12:37:16.377076] [control] running: Routing task to the correct department team.
+[2026-04-19T12:37:17.380019] [control] completed: Control node completed.
+[2026-04-19T12:37:17.384023] [pm] running: Breaking instruction into structured work steps.
+[2026-04-19T12:37:18.386942] [pm] completed: Pm node completed.
+[2026-04-19T12:37:18.389942] [planning] running: Preparing planning document and execution approach.
+[2026-04-19T12:37:19.410263] [planning] completed: Planning node completed.
+[2026-04-19T12:37:19.413774] [developer] running: Producing implementation or technical execution output.
+[2026-04-19T12:37:20.432854] [developer] completed: Developer node completed.
+[2026-04-19T12:37:20.435855] [reviewer] running: Reviewing output quality and risk before release.
+[2026-04-19T12:37:21.453992] Approval requested: Final human approval required
+[2026-04-19T12:37:23.163173] Approval rejected by dashboard_owner
+[2026-04-19T12:37:23.167175] [reviewer] rejected: Workflow stopped because approval was rejected.

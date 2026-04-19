@@ -1,0 +1,11 @@
+﻿{
+    "stamp":  1776601868179,
+    "reject_title":  "Persist Reject 1776601868179 publish approval",
+    "approve_title":  "Persist Approve 1776601868179 publish approval",
+    "reject_task_id":  "60c2c754-ce9f-4253-b012-9865c76598da",
+    "approve_task_id":  "00cf1812-e3d5-4261-9131-b24b7d6c4831",
+    "project_id":  "2de420bd-4fcf-4787-bda7-9952b87b342e",
+    "team_id":  "8fa03e3a-d21f-4834-8cc5-1bb707f58c52",
+    "reject_approval_id":  "751863b9-3507-438a-ae48-4b07ff55b8b1",
+    "approve_approval_id":  "e491bb9d-2097-4930-8ddb-9a48578d44e4"
+}

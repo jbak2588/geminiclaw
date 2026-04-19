@@ -1,0 +1,4 @@
+[2026-04-19T15:14:36.970846] Task created: Restart-safe telegram /reject path
+[2026-04-19T15:14:36.977361] Approval requested: Final human approval required
+[2026-04-19T15:14:56.844377] Approval rejected by telegram:operator
+[2026-04-19T15:14:56.847377] [reviewer] rejected: Workflow stopped because approval was rejected.

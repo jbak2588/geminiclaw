@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
 from core.config import settings
 from api.dashboard import router as dashboard_router
@@ -14,13 +14,25 @@ from api.logs import router as logs_router
 from api.channels import router as channels_router
 from api.knowledge import router as knowledge_router
 from api.websockets import router as ws_router
+from channels.telegram_bot import get_telegram_bot
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    telegram_bot = get_telegram_bot()
+    if telegram_bot:
+        try:
+            await telegram_bot.start()
+        except Exception as exc:
+            logger.warning("[Telegram] Bot failed to start: %s", exc)
     yield
+    if telegram_bot:
+        try:
+            await telegram_bot.stop()
+        except Exception as exc:
+            logger.warning("[Telegram] Bot failed to stop cleanly: %s", exc)
 
 
 app = FastAPI(

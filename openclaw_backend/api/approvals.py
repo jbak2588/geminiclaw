@@ -16,6 +16,9 @@ def list_approvals():
 async def decide_approval(approval_id: str, payload: ApprovalDecision):
     if approval_id not in store.approvals:
         raise HTTPException(status_code=404, detail='Approval not found')
+    existing = store.approvals[approval_id]
+    if existing.get('status') != 'pending':
+        return existing
     approval = store.resolve_approval(
         approval_id=approval_id,
         decision=payload.decision,
@@ -31,4 +34,6 @@ async def decide_approval(approval_id: str, payload: ApprovalDecision):
             'actor': payload.actor,
         }
     )
+    from channels.telegram_bot import notify_telegram_approval_resolved
+    await notify_telegram_approval_resolved(approval)
     return approval

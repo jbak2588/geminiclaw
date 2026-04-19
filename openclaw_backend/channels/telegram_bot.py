@@ -1,168 +1,281 @@
-"""
-Telegram Bot Channel: Bridges Telegram messages to Pi Agent.
-Uses python-telegram-bot v21+ for async Telegram Bot API integration.
+"""Telegram bot integration for phase-1 task dispatch and status feedback."""
 
-Setup:
-1. Create a bot via BotFather (https://t.me/BotFather)
-2. Set TELEGRAM_BOT_TOKEN in .env
-3. Restart the backend — bot auto-starts if token is configured
-"""
+from __future__ import annotations
+
+import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
+
 
 logger = logging.getLogger(__name__)
 
-# Lazy import to avoid ImportError if python-telegram-bot is not installed
 _Application = None
 
-def _get_telegram():
-    """Lazy import telegram module."""
+
+def _get_telegram() -> bool:
+    """Lazily import python-telegram-bot."""
     global _Application
     if _Application is None:
         try:
-            from telegram import Update
-            from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-            _Application = Application
-            return True
+            from telegram.ext import Application
         except ImportError:
-            logger.warning("[Telegram] python-telegram-bot not installed. Run: pip install python-telegram-bot")
+            logger.warning("[Telegram] python-telegram-bot is not installed.")
             return False
+        _Application = Application
     return True
 
 
+def _chat_id_from_source(source: str | None) -> int | None:
+    if not source or not source.startswith("telegram:"):
+        return None
+    try:
+        return int(source.split(":", 1)[1])
+    except (TypeError, ValueError):
+        return None
+
+
+async def process_inbound_telegram_text(chat_id: int, sender_name: str, text: str) -> dict[str, Any]:
+    """Create channel + task records for a Telegram inbound message and start workflow."""
+    from core.in_memory_store import store
+    from api.websockets import broadcaster, run_task_workflow
+
+    project_id = next(iter(store.projects.keys()), None)
+    team_id = next(iter(store.teams.keys()), None)
+    if not project_id or not team_id:
+        raise RuntimeError("Backend is not seeded with default project/team.")
+
+    store.create_channel_message(
+        channel="telegram",
+        sender=f"{sender_name} ({chat_id})",
+        message=text,
+    )
+    await broadcaster.broadcast_json(
+        {
+            "type": "channel_event",
+            "channel": "telegram",
+            "message": text,
+            "sender": f"{sender_name} ({chat_id})",
+        }
+    )
+
+    short_text = text.replace("\n", " ").strip()
+    if len(short_text) > 60:
+        short_text = short_text[:57] + "..."
+    title = f"Telegram: {short_text}"
+    task = store.create_task(
+        title=title,
+        instruction=text,
+        project_id=project_id,
+        team_id=team_id,
+        source=f"telegram:{chat_id}",
+    )
+    await broadcaster.broadcast_json(
+        {
+            "type": "task_event",
+            "task_id": task["id"],
+            "task_title": task["title"],
+            "node": "control",
+            "status": "queued",
+            "message": "Task accepted by Company OS.",
+        }
+    )
+    asyncio.create_task(run_task_workflow(task["id"]))
+    return task
+
+
 class TelegramBot:
-    """Telegram Bot that routes messages to Pi Agent."""
-    
+    """Telegram bot that converts inbound text into backend tasks."""
+
     def __init__(self, token: str):
         self.token = token
         self.app = None
         self._running = False
-    
-    async def start(self):
-        """Initialize and start the Telegram bot."""
+
+    async def start(self) -> None:
         if not _get_telegram():
-            logger.error("[Telegram] Cannot start — python-telegram-bot not installed")
+            logger.error("[Telegram] Cannot start: missing python-telegram-bot dependency.")
             return
-        
-        from telegram import Update
-        from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-        
-        self.app = Application.builder().token(self.token).build()
-        
-        # Register handlers
+
+        from telegram.ext import CommandHandler, MessageHandler, filters
+
+        self.app = _Application.builder().token(self.token).build()
         self.app.add_handler(CommandHandler("start", self._handle_start))
-        self.app.add_handler(CommandHandler("compact", self._handle_compact))
-        self.app.add_handler(CommandHandler("reset", self._handle_reset))
+        self.app.add_handler(CommandHandler("help", self._handle_start))
+        self.app.add_handler(CommandHandler("status", self._handle_status))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
-        
+
         await self.app.initialize()
         await self.app.start()
+        if self.app.updater is None:
+            logger.error("[Telegram] Updater is unavailable. Bot cannot poll updates.")
+            return
         await self.app.updater.start_polling(drop_pending_updates=True)
-        
         self._running = True
-        logger.info("[Telegram] Bot started successfully")
-    
-    async def stop(self):
-        """Stop the Telegram bot."""
-        if self.app and self._running:
+        logger.info("[Telegram] Bot started.")
+
+    async def stop(self) -> None:
+        if not self.app:
+            return
+        if self.app.updater:
             await self.app.updater.stop()
-            await self.app.stop()
-            await self.app.shutdown()
-            self._running = False
-            logger.info("[Telegram] Bot stopped")
-    
-    async def _handle_start(self, update, context):
-        """Handle /start command."""
-        await update.message.reply_text(
-            "🤖 안녕하세요! GeminiClaw Pi Agent입니다.\n\n"
-            "메시지를 보내면 Pi가 응답합니다.\n"
-            "명령어:\n"
-            "  /compact — 대화 이력 압축\n"
-            "  /reset — 세션 초기화"
-        )
-    
-    async def _handle_compact(self, update, context):
-        """Handle /compact command — compress session history."""
-        from core.memory import memory_store
-        from agents.pi_agent import pi_agent_instance
-        
-        session_id = f"telegram_{update.effective_chat.id}"
-        history = memory_store.get_session_history(session_id)
-        msg_count = memory_store.get_message_count(session_id)
-        
-        if msg_count <= 2:
-            await update.message.reply_text("📦 세션이 이미 충분히 짧습니다.")
+        await self.app.stop()
+        await self.app.shutdown()
+        self._running = False
+        logger.info("[Telegram] Bot stopped.")
+
+    async def send_text(self, chat_id: int, text: str) -> None:
+        if not self.app or not self._running:
             return
-        
-        await update.message.reply_text(f"📦 {msg_count}개 메시지를 요약 중...")
-        
-        summary = pi_agent_instance.compact_history(history)
-        saved = memory_store.compact_session(session_id, summary)
-        
-        await update.message.reply_text(
-            f"✅ 세션 압축 완료!\n"
-            f"• 삭제된 메시지: {saved}개\n"
-            f"• 요약:\n{summary}"
-        )
-    
-    async def _handle_reset(self, update, context):
-        """Handle /reset command — clear session."""
-        from core.memory import memory_store
-        
-        session_id = f"telegram_{update.effective_chat.id}"
-        memory_store.clear_session(session_id)
-        await update.message.reply_text("🔄 세션이 초기화되었습니다.")
-    
-    async def _handle_message(self, update, context):
-        """Handle incoming text messages — route to Pi Agent."""
-        from core.memory import memory_store
-        from agents.pi_agent import pi_agent_instance
-        
-        user_message = update.message.text
-        if not user_message:
+        chunks = [text[i : i + 4000] for i in range(0, len(text), 4000)] or [text]
+        for chunk in chunks:
+            await self.app.bot.send_message(chat_id=chat_id, text=chunk)
+
+    async def notify_task_event(self, task: dict[str, Any], node: str, status: str, message: str) -> None:
+        chat_id = _chat_id_from_source(task.get("source"))
+        if chat_id is None:
             return
-        
-        session_id = f"telegram_{update.effective_chat.id}"
-        history = memory_store.get_session_history(session_id)
-        memory_store.add_message(session_id, "user", user_message)
-        
-        # Send typing indicator
-        await update.message.chat.send_action("typing")
-        
+        if status not in {"queued", "approved", "rejected", "completed"}:
+            return
+        text = (
+            f"Task update\n"
+            f"- Task: {task['title']}\n"
+            f"- Task ID: {task['id']}\n"
+            f"- Node: {node}\n"
+            f"- Status: {status}\n"
+            f"- Message: {message}"
+        )
+        await self.send_text(chat_id, text)
+
+    async def notify_approval_request(self, task: dict[str, Any], approval: dict[str, Any]) -> None:
+        chat_id = _chat_id_from_source(task.get("source"))
+        if chat_id is None:
+            return
+        text = (
+            f"Approval required\n"
+            f"- Task: {task['title']}\n"
+            f"- Task ID: {task['id']}\n"
+            f"- Approval ID: {approval['approval_id']}\n"
+            f"- Action: approve/reject in Approval Center (desktop UI)"
+        )
+        await self.send_text(chat_id, text)
+
+    async def notify_approval_resolved(self, approval: dict[str, Any]) -> None:
+        from core.in_memory_store import store
+
+        task = store.tasks.get(approval.get("task_id"))
+        if not task:
+            return
+        chat_id = _chat_id_from_source(task.get("source"))
+        if chat_id is None:
+            return
+        text = (
+            f"Approval resolved\n"
+            f"- Task: {task['title']}\n"
+            f"- Approval ID: {approval['approval_id']}\n"
+            f"- Decision: {approval['status']}"
+        )
+        await self.send_text(chat_id, text)
+
+    async def _handle_start(self, update, context) -> None:
+        await update.message.reply_text(
+            "GeminiClaw Telegram channel is active.\n"
+            "Send any text to create a task.\n"
+            "Commands:\n"
+            "/status <task_id> - check task status"
+        )
+
+    async def _handle_status(self, update, context) -> None:
+        from core.in_memory_store import store
+
+        if not context.args:
+            await update.message.reply_text("Usage: /status <task_id>")
+            return
+
+        task_id = context.args[0].strip()
+        task = store.tasks.get(task_id)
+        if not task:
+            await update.message.reply_text("Task not found.")
+            return
+
+        chat_id = update.effective_chat.id
+        expected_source = f"telegram:{chat_id}"
+        if task.get("source") != expected_source:
+            await update.message.reply_text("Task not found.")
+            return
+
+        await update.message.reply_text(
+            f"Task status\n"
+            f"- Task ID: {task['id']}\n"
+            f"- Title: {task['title']}\n"
+            f"- Status: {task['status']}\n"
+            f"- Latest node: {task.get('latest_node') or '-'}"
+        )
+
+    async def _handle_message(self, update, context) -> None:
+        if not update.message or not update.message.text:
+            return
+
+        text = update.message.text.strip()
+        if not text:
+            await update.message.reply_text("Please send a non-empty message.")
+            return
+
+        chat_id = update.effective_chat.id
+        sender_name = update.effective_user.username or update.effective_user.full_name or str(chat_id)
         try:
-            result = pi_agent_instance.chat(user_message, history, project_id="default")
-            reply = result.get("text", "Error: No response")
-            
-            if result.get("status") == "awaiting_approval":
-                reply = f"⚠️ 승인 필요\n{reply}\n\n(WebSocket UI에서 승인해주세요)"
-            
-            # Save assistant reply
-            memory_store.add_message(session_id, "assistant", reply)
-            
-            # Telegram has a 4096 char limit per message
-            if len(reply) > 4000:
-                for i in range(0, len(reply), 4000):
-                    await update.message.reply_text(reply[i:i+4000])
-            else:
-                await update.message.reply_text(reply)
-                
-        except Exception as e:
-            logger.error(f"[Telegram] Error processing message: {e}")
-            await update.message.reply_text(f"❌ 오류가 발생했습니다: {str(e)[:200]}")
+            task = await process_inbound_telegram_text(chat_id=chat_id, sender_name=sender_name, text=text)
+        except RuntimeError as exc:
+            await update.message.reply_text(str(exc))
+            return
+
+        await update.message.reply_text(
+            f"Task created.\n"
+            f"- Task ID: {task['id']}\n"
+            f"- Title: {task['title']}\n"
+            f"Status updates will be sent here."
+        )
 
 
-# Singleton instance (created when token is available)
 _bot_instance: Optional[TelegramBot] = None
 
+
 def get_telegram_bot() -> Optional[TelegramBot]:
-    """Get or create the Telegram bot singleton."""
     global _bot_instance
     from core.config import settings
-    
+
     if not settings.TELEGRAM_BOT_TOKEN:
         return None
-    
+
     if _bot_instance is None:
         _bot_instance = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
-    
     return _bot_instance
+
+
+async def notify_telegram_task_event(task: dict[str, Any], node: str, status: str, message: str) -> None:
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        await bot.notify_task_event(task=task, node=node, status=status, message=message)
+    except Exception as exc:
+        logger.warning("[Telegram] Failed to send task event: %s", exc)
+
+
+async def notify_telegram_approval_request(task: dict[str, Any], approval: dict[str, Any]) -> None:
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        await bot.notify_approval_request(task=task, approval=approval)
+    except Exception as exc:
+        logger.warning("[Telegram] Failed to send approval request: %s", exc)
+
+
+async def notify_telegram_approval_resolved(approval: dict[str, Any]) -> None:
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        await bot.notify_approval_resolved(approval=approval)
+    except Exception as exc:
+        logger.warning("[Telegram] Failed to send approval resolution: %s", exc)

@@ -94,6 +94,8 @@ async def push_event(task: dict[str, Any], node: str, status: str, message: str)
             'line': f'[{node}] {status}: {message}',
         }
     )
+    from channels.telegram_bot import notify_telegram_task_event
+    await notify_telegram_task_event(task=task, node=node, status=status, message=message)
 
 
 def _needs_approval(task: dict[str, Any]) -> bool:
@@ -149,6 +151,8 @@ async def run_task_workflow(task_id: str) -> None:
                 message='This task includes a risky or external action. Please approve or reject.',
             )
             await broadcaster.broadcast_json({**approval, 'type': 'approval_request'})
+            from channels.telegram_bot import notify_telegram_approval_request
+            await notify_telegram_approval_request(task=task, approval=approval)
             await mark_node(node, 'pending')
             decision = await store.wait_for_approval(approval['approval_id'])
             if decision['status'] == 'rejected':

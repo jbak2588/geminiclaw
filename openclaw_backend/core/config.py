@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 @dataclass
@@ -13,6 +17,7 @@ class Settings:
     openai_api_key: str = os.getenv('OPENAI_API_KEY', '')
     log_dir: str = os.getenv('LOG_DIR', str(Path(__file__).resolve().parents[1] / 'logs'))
     storage_dir: str = os.getenv('STORAGE_DIR', str(Path(__file__).resolve().parents[1] / 'storage'))
+    state_db_path: str = os.getenv('STATE_DB_PATH', str(Path(__file__).resolve().parents[1] / 'storage' / 'phase1_state.db'))
     allowed_origins_raw: str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8000,http://localhost:8001')
     use_docker_sandbox: bool = os.getenv('USE_DOCKER_SANDBOX', 'false').lower() in {'1', 'true', 'yes', 'on'}
     whatsapp_verify_token: str = os.getenv('WHATSAPP_VERIFY_TOKEN', '')
@@ -56,6 +61,7 @@ class Settings:
 settings = Settings()
 Path(settings.log_dir).mkdir(parents=True, exist_ok=True)
 Path(settings.storage_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.state_db_path).parent.mkdir(parents=True, exist_ok=True)
 
 
 def sanitize_project_id(project_id: str | None) -> str:
